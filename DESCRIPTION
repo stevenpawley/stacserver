@@ -1,0 +1,50 @@
+Package: stacserver
+Title: Serve SpatioTemporal Asset Catalogs over a STAC API
+Version: 0.0.0.9000
+Authors@R: 
+    person("Steven", "Pawley", , "dr.stevenpawley@gmail.com", role = c("aut", "cre"))
+Description: Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API
+    1.0 compliant HTTP service. Catalog objects built with the 'stacbuildr'
+    package are ingested into a PostgreSQL/PostGIS database and exposed through
+    a 'plumber' router implementing the core, item search and collections
+    conformance classes. Optional helpers sign asset URLs for private object
+    storage on Azure Blob Storage, Google Cloud Storage and Amazon S3.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Depends:
+    R (>= 4.1.0)
+Imports: 
+    cli,
+    DBI,
+    geojsonsf,
+    jsonlite,
+    plumber,
+    sf,
+    stacbuildr,
+    utils
+Suggests: 
+    RPostgres,
+    pool,
+    AzureStor,
+    AzureAuth,
+    googleCloudStorageR,
+    paws.storage,
+    testthat (>= 3.0.0),
+    withr,
+    knitr,
+    rmarkdown
+Remotes:
+    stevenpawley/stacbuildr
+Config/testthat/edition: 3
+Collate:
+    'operators.R'
+    'stacserver-package.R'
+    'db.R'
+    'plumber-helper.R'
+    'plumber.R'
+    'signers.R'
+URL: https://github.com/stevenpawley/stacserver, https://stevenpawley.github.io/stacserver/
+BugReports: https://github.com/stevenpawley/stacserver/issues
+VignetteBuilder: knitr
+Config/roxygen2/version: 8.1.0

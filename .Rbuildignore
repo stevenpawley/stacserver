@@ -1,0 +1,14 @@
+^stacserver\.Rproj$
+^\.Rproj\.user$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^LICENSE\.md$
+.venv/
+.python-version
+.claude
+^\.github$
+^\.positai$
+^\.claude$
+scratch.*
+stacserver.Rproj

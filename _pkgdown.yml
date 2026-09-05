@@ -1,0 +1,41 @@
+url: https://stevenpawley.github.io/stacserver/
+template:
+  bootstrap: 5
+
+articles:
+  - title: "Articles"
+    navbar: ~
+    contents:
+      - stac-api
+
+reference:
+  - title: "Overview"
+    contents:
+      - stacserver-package
+
+  - title: "Database Backend"
+    desc: >
+      Set up and manage a PostgreSQL/PostGIS database backing store for
+      STAC Collections and Items.
+    contents:
+      - stac_db_setup
+      - stac_db_insert_collection
+      - stac_db_insert_item
+      - stac_db_delete_collection
+      - stac_db_delete_item
+
+  - title: "STAC API Server"
+    desc: >
+      Serve a STAC API 1.0 compliant HTTP API via `plumber`, backed by the
+      PostgreSQL database.
+    contents:
+      - stac_api_router
+
+  - title: "Asset Signing"
+    desc: >
+      Rewrite asset hrefs into short-lived signed URLs for private object
+      storage. Pass one of these to `stac_api_router(sign_fn = )`.
+    contents:
+      - sign_azure_ad
+      - sign_gcp
+      - sign_aws_s3
