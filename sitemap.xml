@@ -1,0 +1,21 @@
+<urlset xmlns = 'http://www.sitemaps.org/schemas/sitemap/0.9'>
+<url><loc>https://stevenpawley.github.io/stacserver/404.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/LICENSE-text.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/LICENSE.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/articles/index.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/articles/stac-api.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/authors.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/index.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/index.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/sign_aws_s3.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/sign_azure_ad.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/sign_gcp.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/stac_api_router.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/stac_db_delete_collection.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/stac_db_delete_item.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/stac_db_insert_collection.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/stac_db_insert_item.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/stac_db_setup.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/stacserver-package.html</loc></url>
+</urlset>
+
