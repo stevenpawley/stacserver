@@ -22,6 +22,7 @@ Imports:
     plumber,
     sf,
     stacbuildr,
+    stats,
     utils
 Suggests: 
     RPostgres,
