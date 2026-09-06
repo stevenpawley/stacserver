@@ -113,7 +113,7 @@
       </dl></div><div class="section level2">
       <h2 id="asset-signing">Asset Signing<a class="anchor" aria-label="anchor" href="#asset-signing"></a></h2>
 
-      <div class="section-desc"><p>Rewrite asset hrefs into short-lived signed URLs for private object storage. Pass one of these to <code>stac_api_router(sign_fn = )</code>.</p></div>
+      <div class="section-desc"><p>Rewrite asset hrefs into short-lived signed URLs for private object storage on Azure Blob Storage. Pass the result to <code>stac_api_router(sign_fn = )</code>.</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -122,24 +122,10 @@
 
       <dl><dt>
 
-          <code><a href="sign_azure_ad.html">sign_azure_ad()</a></code>
+          <code><a href="azure_signer.html">azure_signer()</a></code>
 
         </dt>
-        <dd>Sign an Azure Blob Storage href using Azure AD authentication.</dd>
-
-        <dt>
-
-          <code><a href="sign_gcp.html">sign_gcp()</a></code>
-
-        </dt>
-        <dd>Sign a Google Cloud Storage href using Application Default Credentials.</dd>
-
-        <dt>
-
-          <code><a href="sign_aws_s3.html">sign_aws_s3()</a></code>
-
-        </dt>
-        <dd>Sign an AWS S3 href using a presigned URL.</dd>
+        <dd>Create a reusable Azure Blob Storage signing function</dd>
       </dl></div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

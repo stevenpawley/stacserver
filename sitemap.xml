@@ -6,10 +6,8 @@
 <url><loc>https://stevenpawley.github.io/stacserver/articles/stac-api.html</loc></url>
 <url><loc>https://stevenpawley.github.io/stacserver/authors.html</loc></url>
 <url><loc>https://stevenpawley.github.io/stacserver/index.html</loc></url>
+<url><loc>https://stevenpawley.github.io/stacserver/reference/azure_signer.html</loc></url>
 <url><loc>https://stevenpawley.github.io/stacserver/reference/index.html</loc></url>
-<url><loc>https://stevenpawley.github.io/stacserver/reference/sign_aws_s3.html</loc></url>
-<url><loc>https://stevenpawley.github.io/stacserver/reference/sign_azure_ad.html</loc></url>
-<url><loc>https://stevenpawley.github.io/stacserver/reference/sign_gcp.html</loc></url>
 <url><loc>https://stevenpawley.github.io/stacserver/reference/stac_api_router.html</loc></url>
 <url><loc>https://stevenpawley.github.io/stacserver/reference/stac_db_delete_collection.html</loc></url>
 <url><loc>https://stevenpawley.github.io/stacserver/reference/stac_db_delete_item.html</loc></url>

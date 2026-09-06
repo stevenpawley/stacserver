@@ -11,8 +11,8 @@
 <script src="deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="Serve SpatioTemporal Asset Catalogs over a STAC API">
-<meta name="description" content="Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API 1.0 compliant HTTP service. Catalog objects built with the stacbuildr package are ingested into a PostgreSQL/PostGIS database and exposed through a plumber router implementing the core, item search and collections conformance classes. Optional helpers sign asset URLs for private object storage on Azure Blob Storage, Google Cloud Storage and Amazon S3.">
-<meta property="og:description" content="Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API 1.0 compliant HTTP service. Catalog objects built with the stacbuildr package are ingested into a PostgreSQL/PostGIS database and exposed through a plumber router implementing the core, item search and collections conformance classes. Optional helpers sign asset URLs for private object storage on Azure Blob Storage, Google Cloud Storage and Amazon S3.">
+<meta name="description" content="Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API 1.0 compliant HTTP service. Catalog objects built with the stacbuildr package are ingested into a PostgreSQL/PostGIS database and exposed through a plumber router implementing the core, item search and collections conformance classes. The router serves every request it receives, so access is enforced in front of it, for example by Posit Connect's content permissions. Optional helpers sign asset URLs for private object storage on Azure Blob Storage.">
+<meta property="og:description" content="Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API 1.0 compliant HTTP service. Catalog objects built with the stacbuildr package are ingested into a PostgreSQL/PostGIS database and exposed through a plumber router implementing the core, item search and collections conformance classes. The router serves every request it receives, so access is enforced in front of it, for example by Posit Connect's content permissions. Optional helpers sign asset URLs for private object storage on Azure Blob Storage.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -114,22 +114,24 @@
 <div class="section level2">
 <h2 id="asset-signing">Asset signing<a class="anchor" aria-label="anchor" href="#asset-signing"></a>
 </h2>
-<p>When assets live in private object storage, pass a <code>sign_fn</code> to <code><a href="reference/stac_api_router.html">stac_api_router()</a></code> and the router rewrites every asset href it returns into a short-lived signed URL:</p>
+<p>When assets live in private object storage, pass a <code>sign_fn</code> to <code><a href="reference/stac_api_router.html">stac_api_router()</a></code> and the router rewrites every asset href it returns into a short-lived signed URL. <code>sign_fn</code> is any <code>function(href)</code> returning a signed href, so a backend this package does not cover can be supplied directly.</p>
+<p>Azure Blob Storage is covered out of the box by <code><a href="reference/azure_signer.html">azure_signer()</a></code>. Minting a user delegation key is a network round trip, and the router signs every asset href in every response, so an items page holding ten items with four assets apiece would otherwise make forty calls to Azure before it could reply. <code><a href="reference/azure_signer.html">azure_signer()</a></code> fetches one key and reuses it, renewing only when the key gets close enough to expiry that it could no longer cover a new signature:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">router</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  base_url <span class="op">=</span> <span class="st">"https://stac.example.com"</span>,</span>
-<span>  sign_fn <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">href</span><span class="op">)</span> <span class="fu"><a href="reference/sign_aws_s3.html">sign_aws_s3</a></span><span class="op">(</span><span class="va">href</span>, expiry_seconds <span class="op">=</span> <span class="fl">3600</span><span class="op">)</span></span>
+<span>  sign_fn  <span class="op">=</span> <span class="fu"><a href="reference/azure_signer.html">azure_signer</a></span><span class="op">(</span>expiry_seconds <span class="op">=</span> <span class="fl">3600</span><span class="op">)</span>  <span class="co"># AZURE_STORAGE_ENDPOINT</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-<p><code><a href="reference/sign_azure_ad.html">sign_azure_ad()</a></code> (Azure Blob Storage), <code><a href="reference/sign_gcp.html">sign_gcp()</a></code> (Google Cloud Storage) and <code><a href="reference/sign_aws_s3.html">sign_aws_s3()</a></code> (Amazon S3) are provided. Each needs its own backend package (<code>AzureStor</code> + <code>AzureAuth</code>, <code>googleCloudStorageR</code>, <code>paws.storage</code>), which are Suggests rather than hard dependencies.</p>
+<p>It also validates its configuration when built rather than once per asset at request time, so a missing endpoint fails at startup.</p>
+<p>To sign a single href, call the signer directly: <code>azure_signer()(href)</code>. <code><a href="reference/azure_signer.html">azure_signer()</a></code> needs <code>AzureStor</code> and <code>AzureAuth</code>, which are Suggests rather than hard dependencies.</p>
 <p>stacserver serves a live <a href="https://github.com/radiantearth/stac-api-spec" class="external-link">STAC API</a> backed by a PostgreSQL database (with PostGIS). The API follows the OGC API – Features and STAC API 1.0 specifications.</p>
 </div>
 <div class="section level2">
 <h2 id="prerequisites">Prerequisites<a class="anchor" aria-label="anchor" href="#prerequisites"></a>
 </h2>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"DBI"</span>, <span class="st">"RPostgres"</span>, <span class="st">"plumber"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p>A PostgreSQL database with the PostGIS extension must be reachable.</p>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"DBI"</span>, <span class="st">"RPostgres"</span>, <span class="st">"plumber"</span>, <span class="st">"pool"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<p>A PostgreSQL database with the PostGIS extension must be reachable. <code><a href="reference/stac_db_setup.html">stac_db_setup()</a></code> will create the PostGIS extension if the connecting role is allowed to; on a managed database where PostGIS is already installed it carries on regardless.</p>
 </div>
 <div class="section level2">
 <h2 id="set-up-the-database">Set up the database<a class="anchor" aria-label="anchor" href="#set-up-the-database"></a>
@@ -149,12 +151,25 @@
 <span></span>
 <span><span class="co"># Create tables and indexes (idempotent — safe to run on every startup)</span></span>
 <span><span class="fu"><a href="reference/stac_db_setup.html">stac_db_setup</a></span><span class="op">(</span><span class="va">con</span><span class="op">)</span></span></code></pre></div>
+<div class="section level3">
+<h3 id="use-a-pool-for-a-long-running-server">Use a pool for a long-running server<a class="anchor" aria-label="anchor" href="#use-a-pool-for-a-long-running-server"></a>
+</h3>
+<p>A single <code>DBI</code> connection held for the lifetime of a server will eventually be closed by PostgreSQL or a connection pooler, and every request afterwards fails until the process restarts. For anything long-running, hand <code><a href="reference/stac_api_router.html">stac_api_router()</a></code> a pool instead — every function in this package accepts either:</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu">pool</span><span class="fu">::</span><span class="fu"><a href="http://rstudio.github.io/pool/reference/dbPool.html" class="external-link">dbPool</a></span><span class="op">(</span></span>
+<span>  <span class="fu">RPostgres</span><span class="fu">::</span><span class="fu"><a href="https://rpostgres.r-dbi.org/reference/Postgres.html" class="external-link">Postgres</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  host   <span class="op">=</span> <span class="st">"localhost"</span>,</span>
+<span>  dbname <span class="op">=</span> <span class="st">"stac"</span>,</span>
+<span>  user   <span class="op">=</span> <span class="st">"myuser"</span>,</span>
+<span>  password <span class="op">=</span> <span class="st">"mypassword"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+</div>
 </div>
 <div class="section level2">
 <h2 id="ingest-collections-and-items">Ingest collections and items<a class="anchor" aria-label="anchor" href="#ingest-collections-and-items"></a>
 </h2>
 <p><code>collection</code> and <code>item</code> below are objects built with <a href="https://github.com/stevenpawley/stacbuildr" class="external-link">stacbuildr</a>.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Insert a collection</span></span>
 <span><span class="fu"><a href="reference/stac_db_insert_collection.html">stac_db_insert_collection</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">collection</span><span class="op">)</span></span>
 <span></span>
@@ -174,7 +189,7 @@
 <div class="section level2">
 <h2 id="launch-the-api">Launch the API<a class="anchor" aria-label="anchor" href="#launch-the-api"></a>
 </h2>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">router</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  base_url    <span class="op">=</span> <span class="st">"http://localhost:8000"</span>,</span>
@@ -233,39 +248,34 @@
 </tr>
 </tbody>
 </table>
-<p><strong>Search parameters:</strong> <code>bbox</code>, <code>datetime</code>, <code>collections</code>, <code>ids</code>, <code>limit</code>, <code>offset</code>. The POST <code>/search</code> endpoint additionally accepts a <code>properties</code> object for filtering on any item property, including extension fields:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="dt">"bbox"</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">-106</span><span class="ot">,</span> <span class="dv">39</span><span class="ot">,</span> <span class="dv">-104</span><span class="ot">,</span> <span class="dv">41</span><span class="ot">]</span><span class="fu">,</span></span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="dt">"datetime"</span><span class="fu">:</span> <span class="st">"2023-01-01T00:00:00Z/2023-12-31T23:59:59Z"</span><span class="fu">,</span></span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="dt">"collections"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"sentinel-2-l2a"</span><span class="ot">]</span><span class="fu">,</span></span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="dt">"limit"</span><span class="fu">:</span> <span class="dv">20</span><span class="fu">,</span></span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="dt">"properties"</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>    <span class="dt">"eo:cloud_cover"</span><span class="fu">:</span> <span class="fl">4.1</span><span class="fu">,</span></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>    <span class="dt">"sci:doi"</span><span class="fu">:</span> <span class="st">"10.1000/xyz123"</span></span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>  <span class="fu">}</span></span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p><strong>Search parameters:</strong> <code>bbox</code>, <code>datetime</code>, <code>collections</code>, <code>ids</code>, <code>limit</code>, <code>offset</code>.</p>
+<p><code>bbox</code> takes the four-element <code>west,south,east,north</code> form or the six-element <code>west,south,min_elevation,east,north,max_elevation</code> form, and a box whose west edge is east of its east edge is treated as crossing the antimeridian.</p>
+<p>The POST <code>/search</code> endpoint additionally accepts a <code>query</code> object implementing the <a href="https://github.com/stac-api-extensions/query" class="external-link">STAC API Query extension</a>, which filters on any item property including extension fields. A bare value means equality; an object selects operators (<code>eq</code>, <code>neq</code>, <code>lt</code>, <code>lte</code>, <code>gt</code>, <code>gte</code>, <code>startsWith</code>, <code>endsWith</code>, <code>contains</code>, <code>in</code>):</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="dt">"bbox"</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">-106</span><span class="ot">,</span> <span class="dv">39</span><span class="ot">,</span> <span class="dv">-104</span><span class="ot">,</span> <span class="dv">41</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="dt">"datetime"</span><span class="fu">:</span> <span class="st">"2023-01-01T00:00:00Z/2023-12-31T23:59:59Z"</span><span class="fu">,</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="dt">"collections"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"sentinel-2-l2a"</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="dt">"limit"</span><span class="fu">:</span> <span class="dv">20</span><span class="fu">,</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="dt">"query"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>    <span class="dt">"eo:cloud_cover"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"lt"</span><span class="fu">:</span> <span class="dv">10</span> <span class="fu">},</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>    <span class="dt">"sci:doi"</span><span class="fu">:</span> <span class="st">"10.1000/xyz123"</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="authentication">Authentication<a class="anchor" aria-label="anchor" href="#authentication"></a>
+<h2 id="access-control">Access control<a class="anchor" aria-label="anchor" href="#access-control"></a>
 </h2>
-<p>The API requires an <code>Authorization: Key &lt;api-key&gt;</code> header on every request (the same convention used by Posit Connect for programmatic API access). Key validation is resolved in this order:</p>
-<ol style="list-style-type: decimal">
-<li>
-<strong><code>CONNECT_SERVER</code> env var set</strong> — the key is validated live against Posit Connect’s user API. This env var is always set automatically when the content is deployed on Connect.</li>
-<li>
-<strong><code>STAC_API_KEY</code> env var set</strong> — the key is compared to that static value. Useful for local development.</li>
-<li>
-<strong>Neither set</strong> — any correctly-formatted header is accepted. Use only when Connect is enforcing authentication at the infrastructure level.</li>
-</ol>
-<p>To disable authentication during development:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">router</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span><span class="va">con</span>, require_auth <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
+<p><strong>The router performs no authentication of its own.</strong> Every request it receives is served, so access has to be enforced in front of it. Running it on an open port publishes the whole catalog to anyone who can reach that port.</p>
+<p>On Posit Connect, set the content’s access to <strong>“All authenticated users”</strong> (or a specific group) under the content’s Access settings. Connect then validates the caller’s API key or session before the request reaches the plumber process. Callers authenticate to Connect itself:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>     https://connect.example.com/content/<span class="op">&lt;</span>guid<span class="op">&gt;</span>/collections</span></code></pre></div>
+<p>Elsewhere, put the API behind a reverse proxy, API gateway, or similar that authenticates requests before they arrive.</p>
 </div>
 <div class="section level2">
 <h2 id="deploying-to-posit-connect">Deploying to Posit Connect<a class="anchor" aria-label="anchor" href="#deploying-to-posit-connect"></a>
 </h2>
 <p>The API can be deployed to <a href="https://posit.co/products/enterprise/connect/" class="external-link">Posit Connect</a> using the standard plumber deployment workflow. Create an entrypoint file (e.g. <code>plumber.R</code>) in your project:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># plumber.R</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/stevenpawley/stacserver" class="external-link">stacserver</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/stevenpawley/stacbuildr" class="external-link">stacbuildr</a></span><span class="op">)</span></span>
@@ -283,12 +293,16 @@
 <span></span>
 <span><span class="fu"><a href="reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
-<span>  base_url <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"CONNECT_CONTENT_URL"</span><span class="op">)</span></span>
+<span>  <span class="co"># The URL clients use to reach this content, with no trailing slash</span></span>
+<span>  base_url <span class="op">=</span> <span class="st">"https://connect.example.com/stac"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-<p>Then publish and set database credentials as environment variables in the Connect dashboard. In the content’s <strong>Access</strong> settings, set access to <strong>“All authenticated Posit Connect users”</strong> (or a specific group) — Connect will then validate API keys before requests reach the plumber process, and the <code>CONNECT_SERVER</code> variable will be injected automatically.</p>
+<p><code>base_url</code> has to be set by hand. Connect serves content under a path prefix and the plumber process only sees the path below it, so it cannot work out its own public address. Every link in every response is built from this value, and STAC clients navigate by following those links — get it wrong and paging and item navigation break even though each endpoint answers correctly on its own.</p>
+<p>Use whichever URL clients actually type: the vanity URL if the content has one (set under <strong>Content URL</strong> in the content settings), otherwise <code>https://connect.example.com/content/&lt;guid&gt;/</code>, dropping the trailing slash. After the first deploy, request the landing page and check that the <code>self</code> link matches the URL you used to reach it.</p>
+<p>Then publish and set database credentials as environment variables in the Connect dashboard.</p>
+<p>In the content’s <strong>Access</strong> settings, set access to <strong>“All authenticated Posit Connect users”</strong> (or a specific group). This is what secures the API: Connect validates each caller’s key or session before the request reaches the plumber process. Leaving the content readable by anyone publishes the entire catalog.</p>
 <p>Callers authenticate using their personal Connect API key:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
-<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>     https://connect.example.com/content/<span class="op">&lt;</span>id<span class="op">&gt;</span>/collections</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>     https://connect.example.com/stac/collections</span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="dependencies">Dependencies<a class="anchor" aria-label="anchor" href="#dependencies"></a>
@@ -323,7 +337,18 @@
 </tr>
 </tbody>
 </table>
-<p>Optional: <code>RPostgres</code> (PostgreSQL driver), <code>pool</code> (connection pooling), <code>AzureStor</code> + <code>AzureAuth</code> / <code>googleCloudStorageR</code> / <code>paws.storage</code> (asset signing)</p>
+<p>Optional: <code>RPostgres</code> (PostgreSQL driver), <code>pool</code> (connection pooling), <code>AzureStor</code> + <code>AzureAuth</code> (Azure asset signing)</p>
+</div>
+<div class="section level2">
+<h2 id="testing">Testing<a class="anchor" aria-label="anchor" href="#testing"></a>
+</h2>
+<p>Most of the test suite runs without a database. The database-backed tests are skipped unless <code>STACSERVER_TEST_PG</code> points at a PostgreSQL/PostGIS database the tests may write to:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> stac-test <span class="at">-p</span> 5432:5432 <span class="dt">\</span></span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="at">-e</span> POSTGRES_PASSWORD=postgres <span class="at">-e</span> POSTGRES_DB=stac_test postgis/postgis:16-3.4</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a></span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a><span class="va">STACSERVER_TEST_PG</span><span class="op">=</span>postgresql://postgres:postgres@localhost:5432/stac_test <span class="dt">\</span></span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  <span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test()'</span></span></code></pre></div>
+<p>Everything those tests create is namespaced by a random collection id and removed afterwards.</p>
 </div>
 <div class="section level2">
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>

@@ -145,11 +145,14 @@ maintenance database:</p>
 <span><span class="op">}</span></span>
 <span></span>
 <span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbDisconnect.html" class="external-link">dbDisconnect</a></span><span class="op">(</span><span class="va">admin</span><span class="op">)</span></span></code></pre></div>
-<p>The role also needs permission to run
-<code>CREATE EXTENSION postgis</code>, which
-<code><a href="../reference/stac_db_setup.html">stac_db_setup()</a></code> issues on first use. A superuser
-connection, or a database created from the <code>template_postgis</code>
-template, satisfies this.</p>
+<p><code><a href="../reference/stac_db_setup.html">stac_db_setup()</a></code> issues
+<code>CREATE EXTENSION postgis</code> on first use. That needs an
+elevated role, so on a managed database where PostGIS is already
+installed and the connecting role is not a superuser, the failure is
+tolerated and setup carries on; only a genuinely missing PostGIS stops
+it. A superuser connection, or a database created from the
+<code>template_postgis</code> template, avoids the question
+entirely.</p>
 <p>Now connect to the <code>stac</code> database and create the
 schema:</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
@@ -220,9 +223,8 @@ nothing.</p>
 <span><span class="op">)</span></span></code></pre></div>
 <p>Confirm the URL resolves before inserting -
 <code>curl -I &lt;href&gt;</code> should return <code>200 OK</code>. In
-production, use blob storage URLs (S3, Azure Blob, GCS) so clients fetch
-assets directly without going through the API or a local file
-server.</p>
+production, use blob storage URLs so clients fetch assets directly
+without going through the API or a local file server.</p>
 </div>
 <div class="section level2">
 <h2 id="insert-a-collection-and-item">Insert a collection and item<a class="anchor" aria-label="anchor" href="#insert-a-collection-and-item"></a>
@@ -298,6 +300,32 @@ endpoints:</p>
 </tr>
 </tbody>
 </table>
+<p><code>POST /search</code> accepts a <code>query</code> object
+implementing the STAC API Query extension, which filters on any item
+property including extension fields. A bare value means equality and an
+object selects an operator:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="dt">"collections"</span><span class="fu">:</span> <span class="ot">[</span><span class="st">"terrain"</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="dt">"query"</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>    <span class="dt">"eo:cloud_cover"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"lt"</span><span class="fu">:</span> <span class="dv">10</span> <span class="fu">},</span></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>    <span class="dt">"platform"</span><span class="fu">:</span> <span class="fu">{</span> <span class="dt">"startsWith"</span><span class="fu">:</span> <span class="st">"sentinel-2"</span> <span class="fu">}</span></span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="access-control">Access control<a class="anchor" aria-label="anchor" href="#access-control"></a>
+</h2>
+<p>The router performs no authentication of its own - every request
+reaching it is served. Locally that is usually what you want, since the
+port is bound to your own machine. Anywhere else, something in front of
+the API has to enforce access, or the whole catalog is readable by
+anyone who can reach the port.</p>
+<p>On Posit Connect, set the content’s access to “All authenticated
+users” or a named group under the Access settings. Connect validates the
+caller’s API key or session before the request reaches the plumber
+process, and callers authenticate to Connect itself:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>     https://connect.example.com/content/<span class="op">&lt;</span>guid<span class="op">&gt;</span>/collections</span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="signing-assets-in-private-storage">Signing assets in private storage<a class="anchor" aria-label="anchor" href="#signing-assets-in-private-storage"></a>
@@ -306,29 +334,45 @@ endpoints:</p>
 <code>sign_fn</code> to <code><a href="../reference/stac_api_router.html">stac_api_router()</a></code>. The router calls
 it for every asset href it returns, so clients receive short-lived
 signed URLs instead of unreachable ones.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
 <span>  base_url <span class="op">=</span> <span class="st">"https://stac.example.com"</span>,</span>
-<span>  sign_fn <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">href</span><span class="op">)</span> <span class="fu"><a href="../reference/sign_aws_s3.html">sign_aws_s3</a></span><span class="op">(</span><span class="va">href</span>, expiry_seconds <span class="op">=</span> <span class="fl">3600</span><span class="op">)</span></span>
+<span>  sign_fn <span class="op">=</span> <span class="fu"><a href="../reference/azure_signer.html">azure_signer</a></span><span class="op">(</span>expiry_seconds <span class="op">=</span> <span class="fl">3600</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-<p><code><a href="../reference/sign_azure_ad.html">sign_azure_ad()</a></code>, <code><a href="../reference/sign_gcp.html">sign_gcp()</a></code> and
-<code><a href="../reference/sign_aws_s3.html">sign_aws_s3()</a></code> cover Azure Blob Storage, Google Cloud
-Storage and Amazon S3 respectively. Each requires its own backend
-package (<code>AzureStor</code>/<code>AzureAuth</code>,
-<code>googleCloudStorageR</code>, <code>paws.storage</code>), which are
-Suggests rather than hard dependencies.</p>
+<p><code>sign_fn</code> is any <code>function(href)</code> returning a
+signed href, so a storage backend this package does not cover can be
+supplied directly.</p>
+<p>On Azure, build the signer once with <code><a href="../reference/azure_signer.html">azure_signer()</a></code>.
+Minting a user delegation key is a network round trip to Azure, and the
+router signs every asset href in every response — so a page of ten items
+with four assets each would otherwise make forty such calls before
+replying. <code><a href="../reference/azure_signer.html">azure_signer()</a></code> fetches one key and reuses it
+across hrefs:</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  base_url <span class="op">=</span> <span class="st">"https://stac.example.com"</span>,</span>
+<span>  sign_fn  <span class="op">=</span> <span class="fu"><a href="../reference/azure_signer.html">azure_signer</a></span><span class="op">(</span>expiry_seconds <span class="op">=</span> <span class="fl">3600</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>To sign a single href, call the signer directly:
+<code>azure_signer()(href)</code>. <code><a href="../reference/azure_signer.html">azure_signer()</a></code> requires
+<code>AzureStor</code> and <code>AzureAuth</code>, which are Suggests
+rather than hard dependencies.</p>
 </div>
 <div class="section level2">
 <h2 id="deploying-to-posit-connect">Deploying to Posit Connect<a class="anchor" aria-label="anchor" href="#deploying-to-posit-connect"></a>
 </h2>
-<p>When deploying with multiple concurrent users, replace the single DBI
-connection with a connection pool from the <code>pool</code> package. A
-pool manages multiple connections and hands them out to simultaneous
-requests without contention. Store credentials in environment variables
-rather than hardcoding them - Posit Connect lets you set these
-per-deployment under the Vars tab.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<p>For any long-running deployment, replace the single DBI connection
+with a connection pool from the <code>pool</code> package. This is not
+only about concurrency: a lone connection held for the life of the
+process will eventually be closed by PostgreSQL or a connection pooler,
+and every request after that fails until the process restarts. A pool
+reconnects instead, and hands connections to simultaneous requests
+without contention. Store credentials in environment variables rather
+than hardcoding them - Posit Connect lets you set these per-deployment
+under the Vars tab.</p>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/rstudio/pool" class="external-link">pool</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://www.rplumber.io" class="external-link">plumber</a></span><span class="op">)</span></span>
 <span></span>

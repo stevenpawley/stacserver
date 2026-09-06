@@ -53,12 +53,20 @@ required indexes. Requires the PostGIS extension to be available.</p>
 
 
 <dl><dt id="arg-con">con<a class="anchor" aria-label="anchor" href="#arg-con"></a></dt>
-<dd><p>A DBI connection.</p></dd>
+<dd><p>A DBI connection, or a <code><a href="http://rstudio.github.io/pool/reference/dbPool.html" class="external-link">pool::dbPool()</a></code> object. A pool is
+recommended for long-running servers — see <code><a href="stac_api_router.html">stac_api_router()</a></code>.</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
     <p><code>con</code>, invisibly.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p><code>CREATE EXTENSION postgis</code> needs elevated privileges. On managed PostgreSQL
+services PostGIS is usually pre-installed and the connecting role is not a
+superuser, so a failure to create the extension is tolerated as long as
+PostGIS is actually present; only a genuinely missing PostGIS aborts.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

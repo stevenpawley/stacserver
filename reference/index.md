@@ -33,12 +33,8 @@ PostgreSQL database.
 ## Asset Signing
 
 Rewrite asset hrefs into short-lived signed URLs for private object
-storage. Pass one of these to `stac_api_router(sign_fn = )`.
+storage on Azure Blob Storage. Pass the result to
+`stac_api_router(sign_fn = )`.
 
-- [`sign_azure_ad()`](https://stevenpawley.github.io/stacserver/reference/sign_azure_ad.md)
-  : Sign an Azure Blob Storage href using Azure AD authentication.
-- [`sign_gcp()`](https://stevenpawley.github.io/stacserver/reference/sign_gcp.md)
-  : Sign a Google Cloud Storage href using Application Default
-  Credentials.
-- [`sign_aws_s3()`](https://stevenpawley.github.io/stacserver/reference/sign_aws_s3.md)
-  : Sign an AWS S3 href using a presigned URL.
+- [`azure_signer()`](https://stevenpawley.github.io/stacserver/reference/azure_signer.md)
+  : Create a reusable Azure Blob Storage signing function
