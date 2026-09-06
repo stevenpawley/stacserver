@@ -4,11 +4,10 @@
 ^docs$
 ^pkgdown$
 ^LICENSE\.md$
-.venv/
-.python-version
-.claude
+^\.venv$
+^\.python-version$
+^\.claude$
 ^\.github$
 ^\.positai$
-^\.claude$
-scratch.*
-stacserver.Rproj
+^scratch
+^dev$

@@ -6,7 +6,7 @@
 \alias{stacserver-package}
 \title{stacserver: Serve SpatioTemporal Asset Catalogs over a STAC API}
 \description{
-Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API 1.0 compliant HTTP service. Catalog objects built with the 'stacbuildr' package are ingested into a PostgreSQL/PostGIS database and exposed through a 'plumber' router implementing the core, item search and collections conformance classes. Optional helpers sign asset URLs for private object storage on Azure Blob Storage, Google Cloud Storage and Amazon S3.
+Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API 1.0 compliant HTTP service. Catalog objects built with the 'stacbuildr' package are ingested into a PostgreSQL/PostGIS database and exposed through a 'plumber' router implementing the core, item search and collections conformance classes. The router serves every request it receives, so access is enforced in front of it, for example by Posit Connect's content permissions. Optional helpers sign asset URLs for private object storage on Azure Blob Storage.
 }
 \seealso{
 Useful links:

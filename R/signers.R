@@ -1,163 +1,168 @@
-#' Sign an Azure Blob Storage href using Azure AD authentication.
-#'
-#' Generates a short-lived user delegation SAS token using an Azure AD token.
-#' Suitable for passing directly as the `sign_fn` argument of
-#' [stac_api_router()].
-#'
-#' @param href Unsigned Azure Blob Storage URL.
-#' @param endpoint Full blob service URL, e.g.
-#'   `"https://myaccount.blob.core.windows.net/"`. Defaults to the
-#'   `AZURE_STORAGE_ENDPOINT` environment variable.
-#' @param expiry_seconds Lifetime of the signed URL in seconds (default 3600).
-#' @param token An Azure AD token obtained from [AzureAuth::get_managed_token()]
-#'   or [AzureAuth::get_azure_token()]. Defaults to a managed identity token,
-#'   which works on Azure-hosted infrastructure (VMs, App Service, Container
-#'   Apps). For service principal auth, obtain a token with
-#'   `AzureAuth::get_azure_token()` and capture it in a closure:
-#'   `\(href) sign_azure_ad(href, token = my_token)`.
-#' @return A signed URL string with a SAS token appended.
-#' @export
-sign_azure_ad <- function(
-  href,
-  endpoint = Sys.getenv("AZURE_STORAGE_ENDPOINT"),
-  expiry_seconds = 3600L,
-  token = AzureAuth::get_managed_token("https://storage.azure.com/")
-) {
+.azure_require_packages <- function() {
   if (!requireNamespace("AzureStor", quietly = TRUE)) {
     cli::cli_abort("Package 'AzureStor' is required for asset signing.")
   }
   if (!requireNamespace("AzureAuth", quietly = TRUE)) {
     cli::cli_abort("Package 'AzureAuth' is required for asset signing.")
   }
+  invisible(TRUE)
+}
+
+.azure_check_endpoint <- function(endpoint) {
   if (!nzchar(endpoint)) {
     cli::cli_abort(
       "'endpoint' is empty. Set AZURE_STORAGE_ENDPOINT or pass it directly."
     )
   }
+  endpoint
+}
 
-  # Normalise double slashes that can appear in href (but preserve ://)
+# Normalise double slashes in an href, preserving the "://" after the scheme.
+.azure_normalise_href <- function(href) {
   href <- gsub("://", "\001", href, fixed = TRUE)
   href <- gsub("//+", "/", href)
-  href <- gsub("\001", "://", href, fixed = TRUE)
-
-  start_time  <- Sys.time() - 300
-  expiry_time <- Sys.time() + expiry_seconds
-
-  endp <- AzureStor::storage_endpoint(endpoint, token = token)
-
-  userkey <- AzureStor::get_user_delegation_key(
-    endp,
-    start  = start_time,
-    expiry = expiry_time
-  )
-
-  # Strip the endpoint prefix to get container/blobpath
-  blob_path <- sub(
-    paste0("^", sub("/+$", "", endpoint), "/*"),
-    "",
-    href
-  )
-  blob_path <- gsub("//+", "/", blob_path)
-
-  sas_token <- AzureStor::get_user_delegation_sas(
-    account       = endp,
-    key           = userkey,
-    resource      = blob_path,
-    expiry        = expiry_time,
-    permissions   = "r",
-    resource_type = "b"
-  )
-
-  paste0(href, "?", sas_token)
+  gsub("\001", "://", href, fixed = TRUE)
 }
 
-#' Sign a Google Cloud Storage href using Application Default Credentials.
-#'
-#' Generates a short-lived V4 signed URL for a GCS object. Authentication is
-#' handled by `googleCloudStorageR` / `googleAuthR` — call
-#' `googleCloudStorageR::gcs_auth()` (or set `GOOGLE_APPLICATION_CREDENTIALS`)
-#' before use. On GCE the metadata server is used automatically. Suitable for
-#' passing directly as the `sign_fn` argument of [stac_api_router()].
-#'
-#' @param href Unsigned GCS URL. Accepts both `gs://bucket/object` and
-#'   `https://storage.googleapis.com/bucket/object` forms.
-#' @param expiry_seconds Lifetime of the signed URL in seconds (default 3600).
-#' @return A signed URL string.
-#' @export
-sign_gcp <- function(href, expiry_seconds = 3600L) {
-  if (!requireNamespace("googleCloudStorageR", quietly = TRUE)) {
-    cli::cli_abort(
-      "Package 'googleCloudStorageR' is required for GCP asset signing."
-    )
+# Strip the endpoint prefix from an href to leave container/blobpath.
+.azure_blob_path <- function(href, endpoint) {
+  blob_path <- sub(paste0("^", sub("/+$", "", endpoint), "/*"), "", href)
+  gsub("//+", "/", blob_path)
+}
+
+# Obtain an AAD token, refreshing a supplied one that has gone stale so that a
+# long-lived signer keeps working.
+.azure_token <- function(supplied = NULL) {
+  if (is.null(supplied)) {
+    return(AzureAuth::get_managed_token("https://storage.azure.com/"))
   }
-
-  # Parse bucket and object from gs:// or https://storage.googleapis.com/ URLs
-  path   <- sub("^gs://", "", href)
-  path   <- sub("^https://storage\\.googleapis\\.com/", "", path)
-  bucket <- sub("/.*", "", path)
-  object <- sub("^[^/]+/", "", path)
-
-  meta_obj <- googleCloudStorageR::gcs_get_object(
-    object_name = object,
-    bucket      = bucket,
-    meta        = TRUE
-  )
-
-  googleCloudStorageR::gcs_signed_url(
-    meta_obj,
-    expiration_ts = Sys.time() + expiry_seconds
-  )
+  if (inherits(supplied, "R6") && is.function(supplied$validate)) {
+    valid <- tryCatch(isTRUE(supplied$validate()), error = function(e) TRUE)
+    if (!valid && is.function(supplied$refresh)) {
+      tryCatch(supplied$refresh(), error = function(e) NULL)
+    }
+  }
+  supplied
 }
 
-#' Sign an AWS S3 href using a presigned URL.
+# TRUE when a cached delegation key can still sign a SAS that expires
+# `expiry_seconds` from `now`. A SAS must not outlive the key that signed it,
+# so the key is replaced before that could happen.
+.key_still_usable <- function(key_expiry, now, expiry_seconds, margin = 60) {
+  if (is.null(key_expiry)) {
+    return(FALSE)
+  }
+  as.numeric(difftime(key_expiry, now, units = "secs")) >
+    expiry_seconds + margin
+}
+
+#' Create a reusable Azure Blob Storage signing function
 #'
-#' Generates a short-lived presigned GET URL for an S3 object using
-#' `paws.storage`. Authentication follows the standard AWS credential chain:
-#' environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-#' `AWS_SESSION_TOKEN`), `~/.aws/credentials`, or an IAM instance profile
-#' (EC2, ECS, Lambda). Suitable for passing directly as the `sign_fn`
-#' argument of [stac_api_router()].
+#' Returns a `function(href)` suitable for the `sign_fn` argument of
+#' [stac_api_router()]. The returned function fetches the user delegation key
+#' **once** and reuses it for every href it signs, refreshing only when the key
+#' is close enough to expiry that it could no longer cover a new signature.
 #'
-#' @param href Unsigned S3 URL. Accepts `s3://bucket/key`, virtual-hosted
-#'   style (`https://bucket.s3.region.amazonaws.com/key`), and path style
-#'   (`https://s3.region.amazonaws.com/bucket/key`).
-#' @param expiry_seconds Lifetime of the presigned URL in seconds
-#'   (default 3600).
-#' @param region AWS region. Defaults to the `AWS_DEFAULT_REGION` environment
-#'   variable, falling back to `"us-east-1"`.
-#' @return A presigned URL string.
+#' This matters for a server. Minting a user delegation key is a network round
+#' trip to Azure, and the router signs every asset href in every response, so
+#' an items page holding ten items with four assets apiece would otherwise make
+#' forty such calls before it could reply. Computing the SAS itself is local,
+#' so only the key needs caching.
+#'
+#' @param endpoint Full blob service URL, e.g.
+#'   `"https://myaccount.blob.core.windows.net/"`. Defaults to the
+#'   `AZURE_STORAGE_ENDPOINT` environment variable.
+#' @param expiry_seconds Lifetime of each signed URL in seconds (default 3600).
+#' @param key_lifetime_seconds How long each cached user delegation key is
+#'   requested for (default 24 hours). Azure caps this at seven days, and it
+#'   must exceed `expiry_seconds`, otherwise every signature would need a fresh
+#'   key and the cache would buy nothing.
+#' @param token An Azure AD token from [AzureAuth::get_managed_token()] or
+#'   [AzureAuth::get_azure_token()]. Defaults to `NULL`, meaning a managed
+#'   identity token is obtained when a key is needed — the usual choice on
+#'   Azure-hosted infrastructure. For service principal auth, obtain a token
+#'   with [AzureAuth::get_azure_token()] and pass it here; a supplied token is
+#'   refreshed when it goes stale.
+#' @return A function of one argument (`href`) returning a signed URL. Call it
+#'   directly to sign a single href: `azure_signer()(href)`.
 #' @export
-sign_aws_s3 <- function(
-  href,
+#' @examples
+#' \dontrun{
+#' router <- stac_api_router(
+#'   con,
+#'   base_url = "https://stac.example.com",
+#'   sign_fn = azure_signer(expiry_seconds = 3600)
+#' )
+#' }
+azure_signer <- function(
+  endpoint = Sys.getenv("AZURE_STORAGE_ENDPOINT"),
   expiry_seconds = 3600L,
-  region = Sys.getenv("AWS_DEFAULT_REGION", unset = "us-east-1")
+  key_lifetime_seconds = 24L * 3600L,
+  token = NULL
 ) {
-  if (!requireNamespace("paws.storage", quietly = TRUE)) {
+  # Configuration is checked when the signer is built rather than on the first
+  # request, so a misconfigured deployment fails at startup.
+  .azure_require_packages()
+  endpoint <- .azure_check_endpoint(endpoint)
+
+  expiry_seconds <- as.numeric(expiry_seconds)
+  key_lifetime_seconds <- as.numeric(key_lifetime_seconds)
+
+  if (is.na(expiry_seconds) || expiry_seconds <= 0) {
+    cli::cli_abort("'expiry_seconds' must be a positive number.")
+  }
+  if (key_lifetime_seconds > 7 * 24 * 3600) {
     cli::cli_abort(
-      "Package 'paws.storage' is required for AWS S3 asset signing."
+      "Azure caps a user delegation key at seven days, so
+       'key_lifetime_seconds' cannot exceed {7 * 24 * 3600}."
     )
   }
-
-  if (startsWith(href, "s3://")) {
-    path   <- sub("^s3://", "", href)
-    bucket <- sub("/.*", "", path)
-    key    <- sub("^[^/]+/", "", path)
-  } else if (grepl("\\.s3[.-].*\\.amazonaws\\.com", href)) {
-    # Virtual-hosted: https://bucket.s3[.region].amazonaws.com/key
-    bucket <- sub("\\..+", "", sub("^https://", "", href))
-    key    <- sub("^https://[^/]+/", "", href)
-  } else {
-    # Path style: https://s3[.region].amazonaws.com/bucket/key
-    path   <- sub("^https://s3[^/]*/", "", href)
-    bucket <- sub("/.*", "", path)
-    key    <- sub("^[^/]+/", "", path)
+  if (key_lifetime_seconds <= expiry_seconds) {
+    cli::cli_abort(c(
+      "'key_lifetime_seconds' must be greater than 'expiry_seconds'.",
+      i = "Otherwise every signature would need its own delegation key, which
+           is what this function exists to avoid."
+    ))
   }
 
-  svc <- paws.storage::s3(config = list(region = region))
+  supplied_token <- token
+  endp <- NULL
+  key <- NULL
+  key_expiry <- NULL
 
-  svc$generate_presigned_url(
-    client_method = "get_object",
-    params        = list(Bucket = bucket, Key = key),
-    expires_in    = expiry_seconds
-  )
+  ensure_key <- function(now) {
+    if (!is.null(key) && .key_still_usable(key_expiry, now, expiry_seconds)) {
+      return(invisible(FALSE))
+    }
+    tok <- .azure_token(supplied_token)
+    endp <<- AzureStor::storage_endpoint(endpoint, token = tok)
+    new_expiry <- now + key_lifetime_seconds
+    # The argument names matter: get_user_delegation_key() takes key_start and
+    # key_expiry, and silently ignores anything else through its dots.
+    key <<- AzureStor::get_user_delegation_key(
+      endp,
+      key_start = now - 300,
+      key_expiry = new_expiry
+    )
+    key_expiry <<- new_expiry
+    invisible(TRUE)
+  }
+
+  function(href) {
+    now <- Sys.time()
+    ensure_key(now)
+
+    href <- .azure_normalise_href(href)
+    sas_token <- AzureStor::get_user_delegation_sas(
+      account = endp,
+      key = key,
+      resource = .azure_blob_path(href, endpoint),
+      start = now - 300,
+      expiry = now + expiry_seconds,
+      permissions = "r",
+      resource_type = "b"
+    )
+
+    paste0(href, "?", sas_token)
+  }
 }

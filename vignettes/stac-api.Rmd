@@ -98,9 +98,12 @@ if (nrow(dbGetQuery(
 dbDisconnect(admin)
 ```
 
-The role also needs permission to run `CREATE EXTENSION postgis`, which
-`stac_db_setup()` issues on first use. A superuser connection, or a database
-created from the `template_postgis` template, satisfies this.
+`stac_db_setup()` issues `CREATE EXTENSION postgis` on first use. That needs an
+elevated role, so on a managed database where PostGIS is already installed and
+the connecting role is not a superuser, the failure is tolerated and setup
+carries on; only a genuinely missing PostGIS stops it. A superuser connection,
+or a database created from the `template_postgis` template, avoids the question
+entirely.
 
 Now connect to the `stac` database and create the schema:
 
@@ -171,8 +174,8 @@ item <- add_asset(
 ```
 
 Confirm the URL resolves before inserting - `curl -I <href>` should return
-`200 OK`. In production, use blob storage URLs (S3, Azure Blob, GCS) so clients
-fetch assets directly without going through the API or a local file server.
+`200 OK`. In production, use blob storage URLs so clients fetch assets directly
+without going through the API or a local file server.
 
 ## Insert a collection and item
 
@@ -217,6 +220,37 @@ The router exposes the STAC API core, item search and collections endpoints:
 | `/collections/{id}/items/{itemId}` | A single item |
 | `/search` | Item search, `GET` and `POST` |
 
+`POST /search` accepts a `query` object implementing the STAC API Query
+extension, which filters on any item property including extension fields. A
+bare value means equality and an object selects an operator:
+
+```json
+{
+  "collections": ["terrain"],
+  "query": {
+    "eo:cloud_cover": { "lt": 10 },
+    "platform": { "startsWith": "sentinel-2" }
+  }
+}
+```
+
+## Access control
+
+The router performs no authentication of its own - every request reaching it is
+served. Locally that is usually what you want, since the port is bound to your
+own machine. Anywhere else, something in front of the API has to enforce
+access, or the whole catalog is readable by anyone who can reach the port.
+
+On Posit Connect, set the content's access to "All authenticated users" or a
+named group under the Access settings. Connect validates the caller's API key
+or session before the request reaches the plumber process, and callers
+authenticate to Connect itself:
+
+```sh
+curl -H "Authorization: Key <connect-api-key>" \
+     https://connect.example.com/content/<guid>/collections
+```
+
 ## Signing assets in private storage
 
 When assets live in private object storage, pass a `sign_fn` to
@@ -227,22 +261,41 @@ clients receive short-lived signed URLs instead of unreachable ones.
 pr <- stac_api_router(
   con,
   base_url = "https://stac.example.com",
-  sign_fn = function(href) sign_aws_s3(href, expiry_seconds = 3600)
+  sign_fn = azure_signer(expiry_seconds = 3600)
 )
 ```
 
-`sign_azure_ad()`, `sign_gcp()` and `sign_aws_s3()` cover Azure Blob Storage,
-Google Cloud Storage and Amazon S3 respectively. Each requires its own backend
-package (`AzureStor`/`AzureAuth`, `googleCloudStorageR`, `paws.storage`), which
-are Suggests rather than hard dependencies.
+`sign_fn` is any `function(href)` returning a signed href, so a storage backend
+this package does not cover can be supplied directly.
+
+On Azure, build the signer once with `azure_signer()`. Minting a user
+delegation key is a network round trip to Azure, and the router signs every
+asset href in every response — so a page of ten items with four assets each
+would otherwise make forty such calls before replying. `azure_signer()` fetches
+one key and reuses it across hrefs:
+
+```{r, eval = FALSE}
+pr <- stac_api_router(
+  con,
+  base_url = "https://stac.example.com",
+  sign_fn  = azure_signer(expiry_seconds = 3600)
+)
+```
+
+To sign a single href, call the signer directly: `azure_signer()(href)`.
+`azure_signer()` requires `AzureStor` and `AzureAuth`, which are Suggests
+rather than hard dependencies.
 
 ## Deploying to Posit Connect
 
-When deploying with multiple concurrent users, replace the single DBI
-connection with a connection pool from the `pool` package. A pool manages
-multiple connections and hands them out to simultaneous requests without
-contention. Store credentials in environment variables rather than hardcoding
-them - Posit Connect lets you set these per-deployment under the Vars tab.
+For any long-running deployment, replace the single DBI connection with a
+connection pool from the `pool` package. This is not only about concurrency: a
+lone connection held for the life of the process will eventually be closed by
+PostgreSQL or a connection pooler, and every request after that fails until the
+process restarts. A pool reconnects instead, and hands connections to
+simultaneous requests without contention. Store credentials in environment
+variables rather than hardcoding them - Posit Connect lets you set these
+per-deployment under the Vars tab.
 
 ```{r, eval = FALSE}
 library(pool)

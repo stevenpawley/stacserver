@@ -13,7 +13,7 @@ stac_api_router(
 )
 }
 \arguments{
-\item{con}{A DBI connection.}
+\item{con}{A DBI connection, or a \code{pool::dbPool()} object.}
 
 \item{base_url}{Base URL of the API (no trailing slash). Used in link hrefs.}
 
@@ -24,9 +24,9 @@ stac_api_router(
 \item{sign_fn}{A function \verb{function(href)} that accepts an unsigned asset
 href and returns a signed href string. When non-\code{NULL}, asset hrefs in
 every item response are signed before being returned. Pass
-\code{\link[=sign_azure_ad]{sign_azure_ad()}} to use Azure AD / managed identity, or supply your own
-function for other auth methods (service principal, Planetary Computer
-signing proxy, etc.). Default \code{NULL} (no signing).}
+\code{\link[=azure_signer]{azure_signer()}} to sign Azure Blob Storage hrefs with a managed identity,
+or supply your own function for another backend. Default \code{NULL}
+(no signing).}
 }
 \value{
 A \code{plumber} router object.
@@ -50,14 +50,47 @@ Returns a \code{plumber} router pre-wired with the following endpoints:
 
 \strong{Search parameters} (GET query string or POST JSON body):
 \itemize{
-\item \code{bbox} — comma-separated \verb{west,south,east,north} (GET) or array (POST)
-\item \code{datetime} — ISO 8601 value or range \code{start/end}; use \code{..} for open end
-\item \code{collections} — collection ID(s) to filter
-\item \code{ids} — item ID(s) to filter
-\item \code{limit} — max results per page (default 10, max 10 000)
-\item \code{offset} — zero-based page offset (default 0)
-\item \code{properties} — (POST only) JSON object for property equality matching,
-supporting any item property including extension fields such as
-\code{"eo:cloud_cover"}, \code{"sci:doi"}, \code{"classification:classes"}, etc.
+\item \code{bbox} - comma-separated \verb{west,south,east,north} (GET) or array (POST);
+the six-element form \verb{west,south,min_elevation,east,north,max_elevation}
+is also accepted, and a box whose west edge exceeds its east edge is
+treated as crossing the antimeridian
+\item \code{datetime} - ISO 8601 value or range \code{start/end}; use \code{..} for open end
+\item \code{collections} - collection ID(s) to filter
+\item \code{ids} - item ID(s) to filter
+\item \code{limit} - max results per page (default 10, max 10 000)
+\item \code{offset} - zero-based page offset (default 0)
+\item \code{query} - (POST only) property filters in the form defined by the STAC API
+Query extension, covering any item property including extension fields
+such as \code{"eo:cloud_cover"}, \code{"sci:doi"} or \code{"classification:classes"}.
+A bare value means equality; an object selects operators:
+\code{{"eo:cloud_cover": {"lt": 10}}}. Supported operators are \code{eq}, \code{neq},
+\code{lt}, \code{lte}, \code{gt}, \code{gte}, \code{startsWith}, \code{endsWith}, \code{contains} and \verb{in}.
+\code{properties} is accepted as an alias for backwards compatibility.
 }
 }
+\section{Connections}{
+\code{con} is held for the lifetime of the router. A bare \code{\link[DBI:dbConnect]{DBI::dbConnect()}}
+connection will eventually be closed by the server or a connection pooler,
+after which every request fails until the process restarts, so for anything
+long-running pass a \code{pool::dbPool()} object instead — the \verb{.db_*} helpers
+work with either.
+}
+
+\section{Access control}{
+The router performs no authentication of its own: every request it receives
+is served. Access must be enforced in front of it.
+
+On Posit Connect, set the content's access to "All authenticated users" or a
+named group. Connect then validates the caller's API key or session before
+the request reaches this process, and callers authenticate to Connect
+itself:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{curl -H "Authorization: Key <connect-api-key>" \\
+     https://connect.example.com/content/<guid>/collections
+}\if{html}{\out{</div>}}
+
+Setting that content to "Anyone - no login required", or running the router
+without an authenticating proxy in front of it, publishes the whole catalog
+to anyone who can reach the port.
+}
+

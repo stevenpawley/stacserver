@@ -44,12 +44,6 @@ test_that(".parse_bbox_param returns four numbers", {
   expect_null(.parse_bbox_param(""))
 })
 
-test_that(".parse_bbox_param rejects a bbox that is not four numbers", {
-  expect_error(.parse_bbox_param("1,2,3"), "four numbers")
-  expect_error(.parse_bbox_param("1,2,3,4,5"), "four numbers")
-  expect_error(.parse_bbox_param("1,2,3,north"), "four numbers")
-})
-
 test_that(".bbox_to_wkt closes the ring back at the first corner", {
   wkt <- .bbox_to_wkt(c(-1, -2, 3, 4))
   expect_match(wkt, "^POLYGON\\(\\(")
@@ -114,4 +108,83 @@ test_that(".datetime_sql_clause binds two parameters for a closed range", {
   # Numbering continues from the offset it was given
   expect_match(closed$sql, "\\$3::timestamptz")
   expect_match(closed$sql, "\\$4::timestamptz")
+})
+
+test_that(".parse_bbox_param accepts the six-element 3D form", {
+  expect_equal(
+    .parse_bbox_param("-114.1,51,100,-114,51.1,200"),
+    c(-114.1, 51, 100, -114, 51.1, 200)
+  )
+})
+
+test_that(".parse_bbox_param still rejects any other length", {
+  expect_error(.parse_bbox_param("1,2,3"), "four numbers")
+  expect_error(.parse_bbox_param("1,2,3,4,5"), "four numbers")
+  expect_error(.parse_bbox_param("1,2,3,4,5,6,7"), "four numbers")
+  expect_error(.parse_bbox_param("1,2,3,north"), "four numbers")
+})
+
+test_that("a rejected bbox signals a bad-request condition", {
+  # The router turns this class into a 400 rather than a 500
+  expect_error(.parse_bbox_param("1,2,3"), class = "stacserver_bad_request")
+})
+
+test_that(".bbox_horizontal reads the horizontal corners out of either form", {
+  expect_equal(.bbox_horizontal(c(-1, -2, 3, 4)), c(-1, -2, 3, 4))
+  # Elevations sit in positions 3 and 6, so east/north move along
+  expect_equal(.bbox_horizontal(c(-1, -2, 100, 3, 4, 200)), c(-1, -2, 3, 4))
+  expect_error(.bbox_horizontal(c(1, 2, 3, 4, 5)), "four or six")
+})
+
+test_that(".bbox_to_wkt uses the horizontal corners of a 3D bbox", {
+  flat <- .bbox_to_wkt(c(-1, -2, 3, 4))
+  cube <- .bbox_to_wkt(c(-1, -2, 100, 3, 4, 200))
+  expect_equal(flat, cube)
+})
+
+test_that(".bbox_to_wkt keeps full coordinate precision", {
+  wkt <- .bbox_to_wkt(c(-114.123456789, 51.987654321, -114, 52))
+  expect_match(wkt, "-114.123456789", fixed = TRUE)
+  expect_match(wkt, "51.987654321", fixed = TRUE)
+})
+
+test_that(".parse_int_param accepts integers and falls back to the default", {
+  expect_equal(.parse_int_param("25", "limit", 10L), 25L)
+  expect_equal(.parse_int_param(25, "limit", 10L), 25L)
+  expect_equal(.parse_int_param("", "limit", 10L), 10L)
+  expect_equal(.parse_int_param(NULL, "limit", 10L), 10L)
+})
+
+test_that(".parse_int_param rejects values that would become NA", {
+  # as.integer("abc") is NA, and LIMIT NULL in PostgreSQL means "no limit",
+  # so a non-integer must never reach the query
+  expect_error(.parse_int_param("abc", "limit", 10L), class = "stacserver_bad_request")
+  expect_error(.parse_int_param("abc", "limit", 10L), "must be an integer")
+  expect_error(.parse_int_param("1.5", "limit", 10L), "must be an integer")
+})
+
+test_that(".parse_int_param enforces its bounds", {
+  expect_error(
+    .parse_int_param("0", "limit", 10L, min = 1L, max = 10000L),
+    "at least 1"
+  )
+  expect_error(
+    .parse_int_param("-1", "offset", 0L, min = 0L),
+    "at least 0"
+  )
+  expect_error(
+    .parse_int_param("10001", "limit", 10L, min = 1L, max = 10000L),
+    "at most 10000"
+  )
+  expect_equal(.parse_int_param("10000", "limit", 10L, min = 1L, max = 10000L), 10000L)
+})
+
+test_that(".parse_bbox_body flattens a JSON array and reports non-numbers", {
+  expect_equal(.parse_bbox_body(list(1, 2, 3, 4)), c(1, 2, 3, 4))
+  expect_null(.parse_bbox_body(NULL))
+  # Strings become NA rather than erroring, so validation is what rejects them
+  expect_error(
+    .validate_bbox(.parse_bbox_body(list("a", "b", "c", "d"))),
+    class = "stacserver_bad_request"
+  )
 })

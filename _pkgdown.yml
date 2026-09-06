@@ -34,8 +34,7 @@ reference:
   - title: "Asset Signing"
     desc: >
       Rewrite asset hrefs into short-lived signed URLs for private object
-      storage. Pass one of these to `stac_api_router(sign_fn = )`.
+      storage on Azure Blob Storage. Pass the result to
+      `stac_api_router(sign_fn = )`.
     contents:
-      - sign_azure_ad
-      - sign_gcp
-      - sign_aws_s3
+      - azure_signer

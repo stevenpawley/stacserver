@@ -49,3 +49,47 @@ jobs:
         with:
           upload-snapshots: true
           build_args: 'c("--no-manual","--compact-vignettes=gs+qpdf")'
+
+  db-tests:
+    runs-on: ubuntu-latest
+    name: database tests (postgis)
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stac_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      STACSERVER_TEST_PG: postgresql://postgres:postgres@localhost:5432/stac_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::testthat, any::devtools, any::RPostgres
+          needs: check
+
+      - name: Run tests against PostGIS
+        run: |
+          # Fails the job if any database test is skipped for want of a server
+          Rscript -e '
+            res <- as.data.frame(devtools::test(reporter = "summary"));
+            stopifnot(sum(res$failed) == 0, !any(res$skipped));
+            cat("database tests ran:", any(grepl("test-db", res$file)), "\n")
+          '
+        shell: bash

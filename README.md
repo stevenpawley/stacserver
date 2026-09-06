@@ -41,20 +41,30 @@ remotes::install_github("stevenpawley/stacserver")
 
 When assets live in private object storage, pass a `sign_fn` to
 `stac_api_router()` and the router rewrites every asset href it returns into a
-short-lived signed URL:
+short-lived signed URL. `sign_fn` is any `function(href)` returning a signed
+href, so a backend this package does not cover can be supplied directly.
+
+Azure Blob Storage is covered out of the box by `azure_signer()`. Minting a
+user delegation key is a network round trip, and the router signs every asset
+href in every response, so an items page holding ten items with four assets
+apiece would otherwise make forty calls to Azure before it could reply.
+`azure_signer()` fetches one key and reuses it, renewing only when the key gets
+close enough to expiry that it could no longer cover a new signature:
 
 ```r
 router <- stac_api_router(
   con,
   base_url = "https://stac.example.com",
-  sign_fn = function(href) sign_aws_s3(href, expiry_seconds = 3600)
+  sign_fn  = azure_signer(expiry_seconds = 3600)  # AZURE_STORAGE_ENDPOINT
 )
 ```
 
-`sign_azure_ad()` (Azure Blob Storage), `sign_gcp()` (Google Cloud Storage) and
-`sign_aws_s3()` (Amazon S3) are provided. Each needs its own backend package
-(`AzureStor` + `AzureAuth`, `googleCloudStorageR`, `paws.storage`), which are
-Suggests rather than hard dependencies.
+It also validates its configuration when built rather than once per asset at
+request time, so a missing endpoint fails at startup.
+
+To sign a single href, call the signer directly: `azure_signer()(href)`.
+`azure_signer()` needs `AzureStor` and `AzureAuth`, which are Suggests rather
+than hard dependencies.
 
 stacserver serves a live [STAC API](https://github.com/radiantearth/stac-api-spec)
 backed by a PostgreSQL database (with PostGIS). The API follows the OGC API –
@@ -63,10 +73,13 @@ Features and STAC API 1.0 specifications.
 ## Prerequisites
 
 ```r
-install.packages(c("DBI", "RPostgres", "plumber"))
+install.packages(c("DBI", "RPostgres", "plumber", "pool"))
 ```
 
 A PostgreSQL database with the PostGIS extension must be reachable.
+`stac_db_setup()` will create the PostGIS extension if the connecting role is
+allowed to; on a managed database where PostGIS is already installed it carries
+on regardless.
 
 ## Set up the database
 
@@ -85,6 +98,23 @@ con <- dbConnect(
 
 # Create tables and indexes (idempotent — safe to run on every startup)
 stac_db_setup(con)
+```
+
+### Use a pool for a long-running server
+
+A single `DBI` connection held for the lifetime of a server will eventually be
+closed by PostgreSQL or a connection pooler, and every request afterwards fails
+until the process restarts. For anything long-running, hand `stac_api_router()`
+a pool instead — every function in this package accepts either:
+
+```r
+con <- pool::dbPool(
+  RPostgres::Postgres(),
+  host   = "localhost",
+  dbname = "stac",
+  user   = "myuser",
+  password = "mypassword"
+)
 ```
 
 ## Ingest collections and items
@@ -137,8 +167,16 @@ The router exposes these endpoints:
 | POST | `/search` | Search with JSON body |
 
 **Search parameters:** `bbox`, `datetime`, `collections`, `ids`, `limit`, `offset`.
-The POST `/search` endpoint additionally accepts a `properties` object for
-filtering on any item property, including extension fields:
+
+`bbox` takes the four-element `west,south,east,north` form or the six-element
+`west,south,min_elevation,east,north,max_elevation` form, and a box whose west
+edge is east of its east edge is treated as crossing the antimeridian.
+
+The POST `/search` endpoint additionally accepts a `query` object implementing
+the [STAC API Query extension](https://github.com/stac-api-extensions/query),
+which filters on any item property including extension fields. A bare value
+means equality; an object selects operators (`eq`, `neq`, `lt`, `lte`, `gt`,
+`gte`, `startsWith`, `endsWith`, `contains`, `in`):
 
 ```json
 {
@@ -146,32 +184,31 @@ filtering on any item property, including extension fields:
   "datetime": "2023-01-01T00:00:00Z/2023-12-31T23:59:59Z",
   "collections": ["sentinel-2-l2a"],
   "limit": 20,
-  "properties": {
-    "eo:cloud_cover": 4.1,
+  "query": {
+    "eo:cloud_cover": { "lt": 10 },
     "sci:doi": "10.1000/xyz123"
   }
 }
 ```
 
-## Authentication
+## Access control
 
-The API requires an `Authorization: Key <api-key>` header on every request
-(the same convention used by Posit Connect for programmatic API access). Key
-validation is resolved in this order:
+**The router performs no authentication of its own.** Every request it receives
+is served, so access has to be enforced in front of it. Running it on an open
+port publishes the whole catalog to anyone who can reach that port.
 
-1. **`CONNECT_SERVER` env var set** — the key is validated live against
-   Posit Connect's user API. This env var is always set automatically when the
-   content is deployed on Connect.
-2. **`STAC_API_KEY` env var set** — the key is compared to that static value.
-   Useful for local development.
-3. **Neither set** — any correctly-formatted header is accepted. Use only when
-   Connect is enforcing authentication at the infrastructure level.
+On Posit Connect, set the content's access to **"All authenticated users"** (or
+a specific group) under the content's Access settings. Connect then validates
+the caller's API key or session before the request reaches the plumber process.
+Callers authenticate to Connect itself:
 
-To disable authentication during development:
-
-```r
-router <- stac_api_router(con, require_auth = FALSE)
+```bash
+curl -H "Authorization: Key <connect-api-key>" \
+     https://connect.example.com/content/<guid>/collections
 ```
+
+Elsewhere, put the API behind a reverse proxy, API gateway, or similar that
+authenticates requests before they arrive.
 
 ## Deploying to Posit Connect
 
@@ -197,21 +234,36 @@ stac_db_setup(con)
 
 stac_api_router(
   con,
-  base_url = Sys.getenv("CONNECT_CONTENT_URL")
+  # The URL clients use to reach this content, with no trailing slash
+  base_url = "https://connect.example.com/stac"
 )
 ```
 
+`base_url` has to be set by hand. Connect serves content under a path prefix
+and the plumber process only sees the path below it, so it cannot work out its
+own public address. Every link in every response is built from this value, and
+STAC clients navigate by following those links — get it wrong and paging and
+item navigation break even though each endpoint answers correctly on its own.
+
+Use whichever URL clients actually type: the vanity URL if the content has one
+(set under **Content URL** in the content settings), otherwise
+`https://connect.example.com/content/<guid>/`, dropping the trailing slash.
+After the first deploy, request the landing page and check that the `self` link
+matches the URL you used to reach it.
+
 Then publish and set database credentials as environment variables in the
-Connect dashboard. In the content's **Access** settings, set access to
-**"All authenticated Posit Connect users"** (or a specific group) — Connect
-will then validate API keys before requests reach the plumber process, and the
-`CONNECT_SERVER` variable will be injected automatically.
+Connect dashboard.
+
+In the content's **Access** settings, set access to **"All authenticated Posit
+Connect users"** (or a specific group). This is what secures the API: Connect
+validates each caller's key or session before the request reaches the plumber
+process. Leaving the content readable by anyone publishes the entire catalog.
 
 Callers authenticate using their personal Connect API key:
 
 ```bash
 curl -H "Authorization: Key <connect-api-key>" \
-     https://connect.example.com/content/<id>/collections
+     https://connect.example.com/stac/collections
 ```
 
 ## Dependencies
@@ -225,7 +277,24 @@ curl -H "Authorization: Key <connect-api-key>" \
 | `jsonlite` | JSON serialisation |
 
 Optional: `RPostgres` (PostgreSQL driver), `pool` (connection pooling),
-`AzureStor` + `AzureAuth` / `googleCloudStorageR` / `paws.storage` (asset signing)
+`AzureStor` + `AzureAuth` (Azure asset signing)
+
+## Testing
+
+Most of the test suite runs without a database. The database-backed tests are
+skipped unless `STACSERVER_TEST_PG` points at a PostgreSQL/PostGIS database the
+tests may write to:
+
+```bash
+docker run -d --name stac-test -p 5432:5432 \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=stac_test postgis/postgis:16-3.4
+
+STACSERVER_TEST_PG=postgresql://postgres:postgres@localhost:5432/stac_test \
+  Rscript -e 'devtools::test()'
+```
+
+Everything those tests create is namespaced by a random collection id and
+removed afterwards.
 
 ## References
 

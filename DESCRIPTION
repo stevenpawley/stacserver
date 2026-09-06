@@ -7,8 +7,10 @@ Description: Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API
     1.0 compliant HTTP service. Catalog objects built with the 'stacbuildr'
     package are ingested into a PostgreSQL/PostGIS database and exposed through
     a 'plumber' router implementing the core, item search and collections
-    conformance classes. Optional helpers sign asset URLs for private object
-    storage on Azure Blob Storage, Google Cloud Storage and Amazon S3.
+    conformance classes. The router serves every request it receives, so access
+    is enforced in front of it, for example by Posit Connect's content
+    permissions. Optional helpers sign asset URLs for private object storage on
+    Azure Blob Storage.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -29,8 +31,6 @@ Suggests:
     pool,
     AzureStor,
     AzureAuth,
-    googleCloudStorageR,
-    paws.storage,
     testthat (>= 3.0.0),
     withr,
     knitr,
@@ -38,13 +38,6 @@ Suggests:
 Remotes:
     stevenpawley/stacbuildr
 Config/testthat/edition: 3
-Collate:
-    'operators.R'
-    'stacserver-package.R'
-    'db.R'
-    'plumber-helper.R'
-    'plumber.R'
-    'signers.R'
 URL: https://github.com/stevenpawley/stacserver, https://stevenpawley.github.io/stacserver/
 BugReports: https://github.com/stevenpawley/stacserver/issues
 VignetteBuilder: knitr

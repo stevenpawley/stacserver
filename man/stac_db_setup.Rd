@@ -7,7 +7,8 @@
 stac_db_setup(con)
 }
 \arguments{
-\item{con}{A DBI connection.}
+\item{con}{A DBI connection, or a \code{pool::dbPool()} object. A pool is
+recommended for long-running servers — see \code{\link[=stac_api_router]{stac_api_router()}}.}
 }
 \value{
 \code{con}, invisibly.
@@ -15,4 +16,10 @@ stac_db_setup(con)
 \description{
 Idempotently creates the \code{stac_collections} and \code{stac_items} tables and all
 required indexes. Requires the PostGIS extension to be available.
+}
+\details{
+\verb{CREATE EXTENSION postgis} needs elevated privileges. On managed PostgreSQL
+services PostGIS is usually pre-installed and the connecting role is not a
+superuser, so a failure to create the extension is tolerated as long as
+PostGIS is actually present; only a genuinely missing PostGIS aborts.
 }

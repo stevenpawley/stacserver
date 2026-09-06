@@ -1,5 +1,5 @@
 # Plumber-based STAC API router.
-# Creates an OGC API – Features / STAC API 1.0 compliant plumber router backed
+# Creates an OGC API - Features / STAC API 1.0 compliant plumber router backed
 # by the PostgreSQL database set up with stac_db_setup().
 
 #' Create a plumber router serving a minimal STAC API
@@ -18,26 +18,60 @@
 #' | POST | `/search` | Search items (POST / JSON body) |
 #'
 #' **Search parameters** (GET query string or POST JSON body):
-#' * `bbox` — comma-separated `west,south,east,north` (GET) or array (POST)
-#' * `datetime` — ISO 8601 value or range `start/end`; use `..` for open end
-#' * `collections` — collection ID(s) to filter
-#' * `ids` — item ID(s) to filter
-#' * `limit` — max results per page (default 10, max 10 000)
-#' * `offset` — zero-based page offset (default 0)
-#' * `properties` — (POST only) JSON object for property equality matching,
-#'   supporting any item property including extension fields such as
-#'   `"eo:cloud_cover"`, `"sci:doi"`, `"classification:classes"`, etc.
+#' * `bbox` - comma-separated `west,south,east,north` (GET) or array (POST);
+#'   the six-element form `west,south,min_elevation,east,north,max_elevation`
+#'   is also accepted, and a box whose west edge exceeds its east edge is
+#'   treated as crossing the antimeridian
+#' * `datetime` - ISO 8601 value or range `start/end`; use `..` for open end
+#' * `collections` - collection ID(s) to filter
+#' * `ids` - item ID(s) to filter
+#' * `limit` - max results per page (default 10, max 10 000)
+#' * `offset` - zero-based page offset (default 0)
+#' * `query` - (POST only) property filters in the form defined by the STAC API
+#'   Query extension, covering any item property including extension fields
+#'   such as `"eo:cloud_cover"`, `"sci:doi"` or `"classification:classes"`.
+#'   A bare value means equality; an object selects operators:
+#'   `{"eo:cloud_cover": {"lt": 10}}`. Supported operators are `eq`, `neq`,
+#'   `lt`, `lte`, `gt`, `gte`, `startsWith`, `endsWith`, `contains` and `in`.
+#'   `properties` is accepted as an alias for backwards compatibility.
 #'
-#' @param con A DBI connection.
+#' # Connections
+#'
+#' `con` is held for the lifetime of the router. A bare [DBI::dbConnect()]
+#' connection will eventually be closed by the server or a connection pooler,
+#' after which every request fails until the process restarts, so for anything
+#' long-running pass a `pool::dbPool()` object instead — the `.db_*` helpers
+#' work with either.
+#'
+#' # Access control
+#'
+#' The router performs no authentication of its own: every request it receives
+#' is served. Access must be enforced in front of it.
+#'
+#' On Posit Connect, set the content's access to "All authenticated users" or a
+#' named group. Connect then validates the caller's API key or session before
+#' the request reaches this process, and callers authenticate to Connect
+#' itself:
+#'
+#' ```
+#' curl -H "Authorization: Key <connect-api-key>" \
+#'      https://connect.example.com/content/<guid>/collections
+#' ```
+#'
+#' Setting that content to "Anyone - no login required", or running the router
+#' without an authenticating proxy in front of it, publishes the whole catalog
+#' to anyone who can reach the port.
+#'
+#' @param con A DBI connection, or a `pool::dbPool()` object.
 #' @param base_url Base URL of the API (no trailing slash). Used in link hrefs.
 #' @param title Human-readable API title.
 #' @param description API description.
 #' @param sign_fn A function `function(href)` that accepts an unsigned asset
 #'   href and returns a signed href string. When non-`NULL`, asset hrefs in
 #'   every item response are signed before being returned. Pass
-#'   [sign_azure_ad()] to use Azure AD / managed identity, or supply your own
-#'   function for other auth methods (service principal, Planetary Computer
-#'   signing proxy, etc.). Default `NULL` (no signing).
+#'   [azure_signer()] to sign Azure Blob Storage hrefs with a managed identity,
+#'   or supply your own function for another backend. Default `NULL`
+#'   (no signing).
 #' @return A `plumber` router object.
 #' @export
 stac_api_router <- function(
@@ -50,13 +84,13 @@ stac_api_router <- function(
   # Custom serializer (how results are returned back to the client)
   # JSON is default but for STAC API compliance we are altering the
   # defaults to unwrap single element R vectors and provide explicit
-  # nulls
+  # nulls. digits = NA keeps full numeric precision: jsonlite's default of 4
+  # decimal places would round coordinates on the way out, undoing on the
+  # response what .stac_to_json() preserves on the way in.
   pr <- plumber::pr() |>
-    plumber::pr_set_serializer(
-      plumber::serializer_json(auto_unbox = TRUE, null = "null", na = "null")
-    )
+    plumber::pr_set_serializer(.stac_serializer())
 
-  # CORS — must be first so OPTIONS pre-flight bypasses auth
+  # CORS - answers the pre-flight OPTIONS request directly
   # Only needed if the API is accessed from other JS web pages
   # Not needed if accessed from R/Python scripts
   pr <- plumber::pr_filter(pr, "cors", function(req, res) {
@@ -82,11 +116,26 @@ stac_api_router <- function(
     item
   }
 
+  # Navigation links injected into every collection response. They replace any
+  # link of the same rel stored in the database, which for a catalog also
+  # published statically points at files rather than at this API.
+  collection_links <- function(cid) {
+    list(
+      .link("self", paste0(base_url, "/collections/", cid), "application/json"),
+      .link("root", base_url, "application/json"),
+      .link("parent", base_url, "application/json"),
+      .link("items", paste0(base_url, "/collections/", cid, "/items"), "application/geo+json")
+    )
+  }
+  collection_rels <- c("self", "root", "parent", "items")
+
   # STAC API spec requires the following `rel` types:
   # - self and root: required by OGC API Features on every response
   # - conformance: required by OGC API Features so clients can find /conformance
   # - data: required by OGC API Features to point to /collections
-  # - search (×2): required by the STAC API Item Search spec, one per supported method
+  # - service-desc: required by the oas30 conformance class, pointing at the
+  #   OpenAPI description plumber generates
+  # - search (x2): required by the STAC API Item Search spec, one per supported method
 
   # Landing page (root catalog)
   # GET /
@@ -98,14 +147,7 @@ stac_api_router <- function(
       title = title,
       description = description,
       conformsTo = .stac_conformance_uris(),
-      links = list(
-        .link("self", base_url, "application/json"),
-        .link("root", base_url, "application/json"),
-        .link("conformance", paste0(base_url, "/conformance"), "application/json"),
-        .link("data", paste0(base_url, "/collections"), "application/json"),
-        .link("search", paste0(base_url, "/search"), "application/geo+json", method = "GET"),
-        .link("search", paste0(base_url, "/search"), "application/geo+json", method = "POST")
-      )
+      links = .landing_links(base_url)
     )
   })
 
@@ -119,14 +161,10 @@ stac_api_router <- function(
   pr <- plumber::pr_get(pr, "/collections", function(req, res) {
     collections <- .db_get_all_collections(con)
     collections <- lapply(collections, function(col) {
-      cid <- col$id
       col$links <- .merge_links(
         col$links,
-        list(
-          .link("self", paste0(base_url, "/collections/", cid), "application/json"),
-          .link("root", base_url, "application/json"),
-          .link("items", paste0(base_url, "/collections/", cid, "/items"), "application/geo+json")
-        )
+        new_links = collection_links(col$id),
+        override = collection_rels
       )
       col
     })
@@ -153,11 +191,8 @@ stac_api_router <- function(
 
       col$links <- .merge_links(
         col$links,
-        list(
-          .link("self", paste0(base_url, "/collections/", collectionId), "application/json"),
-          .link("root", base_url, "application/json"),
-          .link("items", paste0(base_url, "/collections/", collectionId, "/items"), "application/geo+json")
-        )
+        new_links = collection_links(collectionId),
+        override = collection_rels
       )
       col
     }
@@ -174,49 +209,46 @@ stac_api_router <- function(
       collectionId,
       bbox = "",
       datetime = "",
-      limit = 10L,
-      offset = 0L
+      limit = "",
+      offset = ""
     ) {
-      if (is.null(.db_get_collection(con, collectionId))) {
-        return(.not_found(res, "Collection not found"))
-      }
+      .with_bad_request(res, {
+        if (is.null(.db_get_collection(con, collectionId))) {
+          return(.not_found(res, "Collection not found"))
+        }
 
-      limit <- min(as.integer(limit), 10000L)
-      offset <- max(as.integer(offset), 0L)
-      bbox <- if (nzchar(bbox)) bbox else NULL
-      datetime <- if (nzchar(datetime)) datetime else NULL
+        limit <- .parse_int_param(limit, "limit", 10L, min = 1L, max = 10000L)
+        offset <- .parse_int_param(offset, "offset", 0L, min = 0L)
+        bbox <- if (nzchar(bbox)) bbox else NULL
+        datetime <- if (nzchar(datetime)) datetime else NULL
 
-      bbox_parsed <- tryCatch(.parse_bbox_param(bbox), error = function(e) {
-        res$status <- 400L
-        # base stop(): this message becomes an HTTP response body, so it must
-        # stay plain text rather than picking up cli's bullets and styling
-        stop(e$message)
-      })
-      dt <- .parse_datetime_param(datetime)
+        bbox_parsed <- .parse_bbox_param(bbox)
+        dt <- .parse_datetime_param(datetime)
 
-      result <- .db_search_items(
-        con,
-        bbox = bbox_parsed,
-        dt_start = dt$start,
-        dt_end = dt$end,
-        single_dt = dt$single_dt,
-        collections = collectionId,
-        limit = limit,
-        offset = offset
-      )
-
-      .feature_collection(
-        features = lapply(result$items, prepare_item),
-        matched = result$matched,
-        returned = length(result$items),
-        links = .pagination_links(
-          base_url = paste0(base_url, "/collections/", collectionId, "/items"),
-          offset = offset,
+        result <- .db_search_items(
+          con,
+          bbox = bbox_parsed,
+          dt_start = dt$start,
+          dt_end = dt$end,
+          single_dt = dt$single_dt,
+          collections = collectionId,
           limit = limit,
-          matched = result$matched,
-          extra_query = .query_string(bbox = bbox, datetime = datetime)
+          offset = offset
         )
-      )
+
+        .feature_collection(
+          features = lapply(result$items, prepare_item),
+          matched = result$matched,
+          returned = length(result$items),
+          links = .pagination_links(
+            base_url = paste0(base_url, "/collections/", collectionId, "/items"),
+            offset = offset,
+            limit = limit,
+            matched = result$matched,
+            extra_query = .query_string(bbox = bbox, datetime = datetime)
+          )
+        )
+      })
     }
   )
 
@@ -253,58 +285,55 @@ stac_api_router <- function(
       datetime = "",
       collections = "",
       ids = "",
-      limit = 10L,
-      offset = 0L
+      limit = "",
+      offset = ""
     ) {
-      limit <- min(as.integer(limit), 10000L)
-      offset <- max(as.integer(offset), 0L)
-      bbox <- if (nzchar(bbox)) bbox else NULL
-      datetime <- if (nzchar(datetime)) datetime else NULL
+      .with_bad_request(res, {
+        limit <- .parse_int_param(limit, "limit", 10L, min = 1L, max = 10000L)
+        offset <- .parse_int_param(offset, "offset", 0L, min = 0L)
+        bbox <- if (nzchar(bbox)) bbox else NULL
+        datetime <- if (nzchar(datetime)) datetime else NULL
 
-      collections <- .split_param(collections)
-      ids <- .split_param(ids)
+        collections <- .split_param(collections)
+        ids <- .split_param(ids)
 
-      bbox_parsed <- tryCatch(.parse_bbox_param(bbox), error = function(e) {
-        res$status <- 400L
-        # base stop(): this message becomes an HTTP response body, so it must
-        # stay plain text rather than picking up cli's bullets and styling
-        stop(e$message)
-      })
-      dt <- .parse_datetime_param(datetime)
+        bbox_parsed <- .parse_bbox_param(bbox)
+        dt <- .parse_datetime_param(datetime)
 
-      result <- .db_search_items(
-        con,
-        bbox = bbox_parsed,
-        dt_start = dt$start,
-        dt_end = dt$end,
-        single_dt = dt$single_dt,
-        collections = collections,
-        ids = ids,
-        limit = limit,
-        offset = offset
-      )
-
-      .feature_collection(
-        features = lapply(result$items, prepare_item),
-        matched = result$matched,
-        returned = length(result$items),
-        links = .pagination_links(
-          base_url = paste0(base_url, "/search"),
-          offset = offset,
+        result <- .db_search_items(
+          con,
+          bbox = bbox_parsed,
+          dt_start = dt$start,
+          dt_end = dt$end,
+          single_dt = dt$single_dt,
+          collections = collections,
+          ids = ids,
           limit = limit,
+          offset = offset
+        )
+
+        .feature_collection(
+          features = lapply(result$items, prepare_item),
           matched = result$matched,
-          extra_query = .query_string(
-            bbox = bbox,
-            datetime = datetime,
-            collections = if (!is.null(collections)) {
-              paste(collections, collapse = ",")
-            } else {
-              NULL
-            },
-            ids = if (!is.null(ids)) paste(ids, collapse = ",") else NULL
+          returned = length(result$items),
+          links = .pagination_links(
+            base_url = paste0(base_url, "/search"),
+            offset = offset,
+            limit = limit,
+            matched = result$matched,
+            extra_query = .query_string(
+              bbox = bbox,
+              datetime = datetime,
+              collections = if (!is.null(collections)) {
+                paste(collections, collapse = ",")
+              } else {
+                NULL
+              },
+              ids = if (!is.null(ids)) paste(ids, collapse = ",") else NULL
+            )
           )
         )
-      )
+      })
     }
   )
 
@@ -313,80 +342,57 @@ stac_api_router <- function(
     pr,
     "/search",
     function(req, res) {
-      body <- req$body %||% list()
+      .with_bad_request(res, {
+        body <- req$body %||% list()
 
-      bbox_raw <- body$bbox
-      bbox_parsed <- if (!is.null(bbox_raw)) {
-        b <- tryCatch(as.numeric(unlist(bbox_raw)), error = function(e) {
-          res$status <- 400L
-          cli::cli_abort("'bbox' must be a JSON array of four numbers")
-        })
-        if (length(b) != 4L) {
-          res$status <- 400L
-          return(.error_body(400L, "'bbox' must have exactly four elements"))
+        bbox_parsed <- .parse_bbox_body(body$bbox)
+        if (!is.null(bbox_parsed)) {
+          bbox_parsed <- .validate_bbox(bbox_parsed)
         }
-        b
-      } else {
-        NULL
-      }
 
-      datetime <- body$datetime %||% NULL
-      collections <- .as_char_vec(body$collections)
-      ids <- .as_char_vec(body$ids)
-      limit <- min(as.integer(body$limit %||% 10L), 10000L)
-      offset <- max(as.integer(body$offset %||% 0L), 0L)
-      properties <- body$properties %||% NULL
-
-      dt <- .parse_datetime_param(datetime)
-
-      result <- .db_search_items(
-        con,
-        bbox = bbox_parsed,
-        dt_start = dt$start,
-        dt_end = dt$end,
-        single_dt = dt$single_dt,
-        collections = collections,
-        ids = ids,
-        properties = properties,
-        limit = limit,
-        offset = offset
-      )
-
-      .feature_collection(
-        features = lapply(result$items, prepare_item),
-        matched = result$matched,
-        returned = length(result$items),
-        links = .pagination_links(
-          base_url = paste0(base_url, "/search"),
-          offset = offset,
-          limit = limit,
-          matched = result$matched
+        datetime <- body$datetime %||% NULL
+        collections <- .as_char_vec(body$collections)
+        ids <- .as_char_vec(body$ids)
+        limit <- .parse_int_param(
+          body$limit,
+          "limit",
+          10L,
+          min = 1L,
+          max = 10000L
         )
-      )
+        offset <- .parse_int_param(body$offset, "offset", 0L, min = 0L)
+        query <- body$query %||% NULL
+
+        dt <- .parse_datetime_param(datetime)
+
+        result <- .db_search_items(
+          con,
+          bbox = bbox_parsed,
+          dt_start = dt$start,
+          dt_end = dt$end,
+          single_dt = dt$single_dt,
+          collections = collections,
+          ids = ids,
+          query = query,
+          limit = limit,
+          offset = offset
+        )
+
+        .feature_collection(
+          features = lapply(result$items, prepare_item),
+          matched = result$matched,
+          returned = length(result$items),
+          links = .pagination_links(
+            base_url = paste0(base_url, "/search"),
+            offset = offset,
+            limit = limit,
+            matched = result$matched
+          )
+        )
+      })
     },
     parsers = "json"
   )
-
-  # ---- GET /sign ---- (only registered when a sign_fn is provided)
-  if (!is.null(sign_fn)) {
-    pr <- plumber::pr_get(pr, "/sign", function(req, res, href = "") {
-      if (!nzchar(href)) {
-        res$status <- 400L
-        return(.error_body(400L, "Missing required query parameter: href"))
-      }
-      signed <- tryCatch(
-        sign_fn(href),
-        error = function(e) {
-          res$status <- 500L
-          .error_body(500L, conditionMessage(e))
-        }
-      )
-      if (is.list(signed)) {
-        return(signed)
-      }
-      list(href = signed)
-    })
-  }
 
   pr
 }

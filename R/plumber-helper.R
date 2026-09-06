@@ -36,11 +36,15 @@
 #' @return A character list of conformance class URI strings.
 #' @noRd
 .stac_conformance_uris <- function() {
+  # Only classes that are actually implemented belong here: a client trusts
+  # this list to decide what it may send. The versions match the STAC version
+  # stamped on the objects served (1.1.0).
   list(
-    "https://api.stacspec.org/v1.0.0/core",
-    "https://api.stacspec.org/v1.0.0/item-search",
-    "https://api.stacspec.org/v1.0.0/item-search#fields",
-    "https://api.stacspec.org/v1.0.0/ogcapi-features",
+    "https://api.stacspec.org/v1.1.0/core",
+    "https://api.stacspec.org/v1.1.0/collections",
+    "https://api.stacspec.org/v1.1.0/item-search",
+    "https://api.stacspec.org/v1.1.0/item-search#query",
+    "https://api.stacspec.org/v1.1.0/ogcapi-features",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson"
@@ -82,12 +86,27 @@
 #' links stored on an item or collection in the database while injecting
 #' standard navigation links without creating duplicates.
 #'
+#' Relations named in `override` are dropped from `existing` first. A catalog
+#' built for static hosting stores its own `self` and `root` links pointing at
+#' files rather than at this API; keeping both would leave the response with
+#' two `self` links, which the STAC specification does not allow.
+#'
 #' @param existing A list of existing link objects, or `NULL`.
 #' @param new_links A list of link objects to append.
+#' @param override Character vector of `rel` values that the new links replace
+#'   rather than supplement.
 #' @return A combined list of link objects with no duplicate `rel`/`href` pairs.
 #' @noRd
-.merge_links <- function(existing, new_links) {
+.merge_links <- function(existing, new_links, override = character(0)) {
   existing <- existing %||% list()
+  if (length(override) > 0 && length(existing) > 0) {
+    keep <- !vapply(
+      existing,
+      function(l) isTRUE(l$rel %in% override),
+      logical(1)
+    )
+    existing <- existing[keep]
+  }
   keys <- vapply(existing, function(l) paste0(l$rel, "|", l$href), character(1))
   for (lnk in new_links) {
     key <- paste0(lnk$rel, "|", lnk$href)
@@ -104,8 +123,7 @@
 #' Wraps a list of STAC Item feature objects into a GeoJSON FeatureCollection
 #' with pagination metadata. `numberMatched` is the total number of items
 #' satisfying the query (before pagination); `numberReturned` is the count in
-#' this page. The `context` field repeats these counts for compatibility with
-#' the STAC API Context extension.
+#' this page.
 #'
 #' @param features A list of GeoJSON Feature objects (STAC Items).
 #' @param matched Total number of items matching the query.
@@ -120,7 +138,6 @@
     features = features,
     numberMatched = matched,
     numberReturned = returned,
-    context = list(returned = returned, matched = matched),
     links = links
   )
 }
@@ -148,7 +165,9 @@
   matched,
   extra_query = ""
 ) {
-  sep <- if (nzchar(extra_query)) "&" else "?"
+  # The base query string always carries limit and offset, so any additional
+  # filters are appended with "&" and an absent filter appends nothing at all.
+  sep <- if (nzchar(extra_query)) "&" else ""
   links <- list(
     .link(
       "self",
@@ -209,7 +228,8 @@
   iid <- item$id
   item$links <- .merge_links(
     item$links,
-    list(
+    override = c("self", "root", "collection", "parent"),
+    new_links = list(
       .link(
         "self",
         paste0(base_url, "/collections/", cid, "/items/", iid),
@@ -314,4 +334,146 @@
   }
   v <- as.character(unlist(x))
   if (length(v) == 0) NULL else v
+}
+
+#' Signal a bad-request condition.
+#'
+#' Raises a condition that `.with_bad_request()` converts into a 400 response.
+#' The message is used verbatim as the response body, so it stays plain text
+#' rather than picking up cli's bullets and styling.
+#'
+#' @param msg Human-readable description of what is wrong with the request.
+#' @noRd
+.abort_bad_request <- function(msg) {
+  stop(structure(
+    class = c("stacserver_bad_request", "error", "condition"),
+    list(message = msg, call = NULL)
+  ))
+}
+
+#' Run a request handler, turning bad-request conditions into 400 responses.
+#'
+#' Plumber's default error handler replaces a handler's error message with a
+#' generic body, so a validation failure has to be turned into a normal return
+#' value rather than propagated as an error.
+#'
+#' @param res A plumber response object.
+#' @param expr Handler body to evaluate.
+#' @return The value of `expr`, or a 400 error body.
+#' @noRd
+.with_bad_request <- function(res, expr) {
+  tryCatch(
+    expr,
+    stacserver_bad_request = function(e) {
+      res$status <- 400L
+      .error_body(400L, conditionMessage(e))
+    }
+  )
+}
+
+#' Parse and validate an integer query parameter.
+#'
+#' Rejects values that are not integers rather than letting `as.integer()`
+#' produce `NA`: an `NA` limit reaches PostgreSQL as `LIMIT NULL`, which means
+#' no limit at all and would return the entire result set.
+#'
+#' @param x Raw parameter value.
+#' @param name Parameter name, used in the error message.
+#' @param default Value to use when `x` is absent or blank.
+#' @param min,max Inclusive bounds. Values outside them are rejected.
+#' @return An integer scalar.
+#' @noRd
+.parse_int_param <- function(x, name, default, min = NULL, max = NULL) {
+  if (is.null(x) || (length(x) == 1L && is.character(x) && !nzchar(x))) {
+    return(as.integer(default))
+  }
+  if (length(x) != 1L) {
+    .abort_bad_request(sprintf("'%s' must be a single integer", name))
+  }
+
+  n <- suppressWarnings(as.numeric(x))
+  if (is.na(n) || n != trunc(n)) {
+    .abort_bad_request(sprintf("'%s' must be an integer, got '%s'", name, x))
+  }
+  if (!is.null(min) && n < min) {
+    .abort_bad_request(sprintf("'%s' must be at least %d", name, as.integer(min)))
+  }
+  if (!is.null(max) && n > max) {
+    .abort_bad_request(sprintf("'%s' must be at most %d", name, as.integer(max)))
+  }
+
+  as.integer(n)
+}
+
+#' Parse a bbox supplied as a JSON array in a POST body.
+#'
+#' @param x A parsed JSON array, or `NULL`.
+#' @return A numeric vector of length 4 or 6, or `NULL`.
+#' @noRd
+.parse_bbox_body <- function(x) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+  # as.numeric() on a non-numeric string warns and returns NA rather than
+  # erroring, so the NA check in .validate_bbox() is what rejects it.
+  vals <- suppressWarnings(as.numeric(unlist(x)))
+  vals
+}
+
+#' Build the link array for the API landing page.
+#'
+#' OGC API - Features requires `self`, `root`, `conformance` and `data` on the
+#' landing page; the `oas30` conformance class requires `service-desc`; and the
+#' STAC Item Search class requires one `search` link per supported method.
+#'
+#' @param base_url Base URL of the API (no trailing slash).
+#' @return A list of STAC link objects.
+#' @noRd
+.landing_links <- function(base_url) {
+  list(
+    .link("self", base_url, "application/json"),
+    .link("root", base_url, "application/json"),
+    .link(
+      "conformance",
+      paste0(base_url, "/conformance"),
+      "application/json"
+    ),
+    .link("data", paste0(base_url, "/collections"), "application/json"),
+    .link(
+      "service-desc",
+      paste0(base_url, "/openapi.json"),
+      "application/vnd.oai.openapi+json;version=3.0"
+    ),
+    .link("service-doc", paste0(base_url, "/__docs__/"), "text/html"),
+    .link(
+      "search",
+      paste0(base_url, "/search"),
+      "application/geo+json",
+      method = "GET"
+    ),
+    .link(
+      "search",
+      paste0(base_url, "/search"),
+      "application/geo+json",
+      method = "POST"
+    )
+  )
+}
+
+#' The JSON serializer used for every response.
+#'
+#' STAC compliance needs single-element R vectors unwrapped and nulls written
+#' explicitly. `digits = NA` keeps full numeric precision; jsonlite's default
+#' of 4 decimal places would round coordinates to roughly 11 m as they are
+#' written to the response.
+#'
+#' @return A plumber serializer.
+#' @noRd
+.stac_serializer <- function() {
+  plumber::serializer_json(
+    auto_unbox = TRUE,
+    null = "null",
+    na = "null",
+    digits = NA
+  )
 }
