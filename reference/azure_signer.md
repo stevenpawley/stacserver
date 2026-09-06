@@ -61,6 +61,12 @@ response, so an items page holding ten items with four assets apiece
 would otherwise make forty such calls before it could reply. Computing
 the SAS itself is local, so only the key needs caching.
 
+Each signature is read-only, scoped to the single blob it names, valid
+for `expiry_seconds`, and restricted to HTTPS. An href that does not
+point at `endpoint` is returned unchanged, so a catalog holding a
+mixture of private blobs and public URLs is left alone where it should
+be.
+
 ## Examples
 
 ``` r
