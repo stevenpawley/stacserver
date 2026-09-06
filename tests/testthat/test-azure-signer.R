@@ -23,6 +23,7 @@ fake_azure <- function(counter) {
     },
     get_user_delegation_sas = function(account, key, resource, ...) {
       counter$sas <- counter$sas + 1L
+      counter$args <- c(counter$args, list(c(list(resource = resource), list(...))))
       paste0("sv=2024-01-01&sig=", counter$sas)
     },
     .package = "AzureStor",
@@ -161,4 +162,98 @@ test_that(".azure_blob_path strips the endpoint prefix", {
     .azure_blob_path("https://acct.blob.core.windows.net/c/a.tif", "https://acct.blob.core.windows.net"),
     "c/a.tif"
   )
+})
+
+
+test_that("each signature is read-only, blob-scoped and HTTPS-only", {
+  skip_if_not_installed("AzureStor")
+  skip_if_not_installed("AzureAuth")
+
+  counter <- new.env(parent = emptyenv())
+  counter$keys <- 0L
+  counter$sas <- 0L
+  counter$args <- list()
+  fake_azure(counter)
+
+  azure_signer(endpoint = endpoint)(paste0(endpoint, "container/dem.tif"))
+  a <- counter$args[[1]]
+
+  expect_equal(a$permissions, "r")        # no write, no delete
+  expect_equal(a$resource_type, "b")      # this blob, not the container
+  expect_equal(a$resource, "container/dem.tif")
+  # Without this the token would also work over plain http, so an intercepted
+  # URL could be replayed
+  expect_equal(a$protocol, "https")
+})
+
+test_that("the SAS expires when asked, and starts slightly early for clock skew", {
+  skip_if_not_installed("AzureStor")
+  skip_if_not_installed("AzureAuth")
+
+  counter <- new.env(parent = emptyenv())
+  counter$keys <- 0L
+  counter$sas <- 0L
+  counter$args <- list()
+  fake_azure(counter)
+
+  before <- Sys.time()
+  azure_signer(endpoint = endpoint, expiry_seconds = 600)(paste0(endpoint, "c/a.tif"))
+  a <- counter$args[[1]]
+
+  expect_lt(as.numeric(difftime(a$start, before, units = "secs")), 0)
+  expect_equal(
+    round(as.numeric(difftime(a$expiry, a$start, units = "secs"))),
+    900  # 600 requested plus the 300s skew allowance
+  )
+})
+
+test_that("an href outside the configured account is left alone", {
+  skip_if_not_installed("AzureStor")
+  skip_if_not_installed("AzureAuth")
+
+  counter <- new.env(parent = emptyenv())
+  counter$keys <- 0L
+  counter$sas <- 0L
+  counter$args <- list()
+  fake_azure(counter)
+
+  sign <- azure_signer(endpoint = endpoint)
+
+  # A public CDN thumbnail, and a blob in a different storage account: signing
+  # either would append a meaningless signature to a URL that already worked
+  foreign <- c(
+    "https://cdn.example.com/thumb.png",
+    "https://otheraccount.blob.core.windows.net/c/x.tif",
+    "http://127.0.0.1:8000/dem.tif"
+  )
+  for (href in foreign) {
+    expect_identical(sign(href), href)
+  }
+
+  # Nothing was signed, and no delegation key was even fetched for them
+  expect_equal(counter$sas, 0L)
+  expect_equal(counter$keys, 0L)
+
+  # An href that does belong to the account is still signed
+  signed <- sign(paste0(endpoint, "c/dem.tif"))
+  expect_match(signed, "?sv=", fixed = TRUE)
+  expect_equal(counter$sas, 1L)
+})
+
+test_that(".azure_href_in_account matches only the configured account", {
+  ep <- "https://myaccount.blob.core.windows.net/"
+
+  expect_true(.azure_href_in_account("https://myaccount.blob.core.windows.net/c/a.tif", ep))
+  # A trailing slash on the endpoint is optional
+  expect_true(.azure_href_in_account(
+    "https://myaccount.blob.core.windows.net/c/a.tif",
+    "https://myaccount.blob.core.windows.net"
+  ))
+
+  expect_false(.azure_href_in_account("https://cdn.example.com/thumb.png", ep))
+  expect_false(.azure_href_in_account("https://otheraccount.blob.core.windows.net/c/a.tif", ep))
+  # A lookalike host must not match
+  expect_false(.azure_href_in_account("https://myaccount.blob.core.windows.net.evil.com/a.tif", ep))
+  # The endpoint itself names no blob
+  expect_false(.azure_href_in_account("https://myaccount.blob.core.windows.net/", ep))
 })

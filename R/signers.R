@@ -24,6 +24,18 @@
   gsub("\001", "://", href, fixed = TRUE)
 }
 
+# TRUE when an href points at the configured storage account. Assets held
+# elsewhere - a public CDN, a second storage account - are not ours to sign:
+# a signature computed over a foreign path is meaningless and would corrupt a
+# URL that already worked.
+.azure_href_in_account <- function(href, endpoint) {
+  prefix <- paste0(sub("/+$", "", endpoint), "/")
+  href <- .azure_normalise_href(href)
+  # The prefix must be followed by an actual blob path: the bare endpoint
+  # names no blob, and signing an empty resource yields a useless token.
+  startsWith(href, prefix) && nchar(href) > nchar(prefix)
+}
+
 # Strip the endpoint prefix from an href to leave container/blobpath.
 .azure_blob_path <- function(href, endpoint) {
   blob_path <- sub(paste0("^", sub("/+$", "", endpoint), "/*"), "", href)
@@ -68,6 +80,11 @@
 #' an items page holding ten items with four assets apiece would otherwise make
 #' forty such calls before it could reply. Computing the SAS itself is local,
 #' so only the key needs caching.
+#'
+#' Each signature is read-only, scoped to the single blob it names, valid for
+#' `expiry_seconds`, and restricted to HTTPS. An href that does not point at
+#' `endpoint` is returned unchanged, so a catalog holding a mixture of private
+#' blobs and public URLs is left alone where it should be.
 #'
 #' @param endpoint Full blob service URL, e.g.
 #'   `"https://myaccount.blob.core.windows.net/"`. Defaults to the
@@ -149,6 +166,11 @@ azure_signer <- function(
   }
 
   function(href) {
+    # An asset somewhere else is returned exactly as it was stored
+    if (!.azure_href_in_account(href, endpoint)) {
+      return(href)
+    }
+
     now <- Sys.time()
     ensure_key(now)
 
@@ -160,7 +182,10 @@ azure_signer <- function(
       start = now - 300,
       expiry = now + expiry_seconds,
       permissions = "r",
-      resource_type = "b"
+      # Read only, one blob, and refused over plain HTTP so that an
+      # intercepted URL cannot be replayed
+      resource_type = "b",
+      protocol = "https"
     )
 
     paste0(href, "?", sas_token)

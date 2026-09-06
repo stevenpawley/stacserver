@@ -90,9 +90,9 @@ stac_api_router <- function(
   pr <- plumber::pr() |>
     plumber::pr_set_serializer(.stac_serializer())
 
-  # CORS - answers the pre-flight OPTIONS request directly
-  # Only needed if the API is accessed from other JS web pages
-  # Not needed if accessed from R/Python scripts
+  # CORS - answers the pre-flight OPTIONS request directly.
+  # Only needed by a browser on another origin; a page served from the same
+  # origin as the API never involves CORS, and R and Python clients ignore it.
   pr <- plumber::pr_filter(pr, "cors", function(req, res) {
     res$setHeader("Access-Control-Allow-Origin", "*")
     res$setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
