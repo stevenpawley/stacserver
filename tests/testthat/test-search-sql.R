@@ -28,6 +28,50 @@ test_that(".bbox_sql_clause numbers placeholders from the offset given", {
   expect_match(cl$sql, "\\$7, \\$8, \\$9, \\$10")
 })
 
+test_that(".intersects_sql_clause stamps the SRID on the parsed geometry", {
+  cl <- .intersects_sql_clause(
+    list(type = "Point", coordinates = list(-114, 51)),
+    1L
+  )
+  # Without ST_SetSRID, GeoJSON carrying no CRS member reaches the 4326 column
+  # with no SRID of its own, which errors rather than matching nothing
+  expect_match(cl$sql, "ST_SetSRID\\(ST_GeomFromGeoJSON\\(\\$1::text\\), 4326\\)")
+  expect_equal(cl$params, list('{"type":"Point","coordinates":[-114,51]}'))
+})
+
+test_that(".intersects_sql_clause numbers its placeholder from the offset given", {
+  cl <- .intersects_sql_clause(
+    list(type = "Point", coordinates = list(0, 0)),
+    5L
+  )
+  expect_match(cl$sql, "\\$5::text", fixed = FALSE)
+})
+
+test_that(".geojson_text writes both parsed shapes back to the same JSON", {
+  # A GET query string goes through .parse_json() and stays nested lists; a
+  # POST body is simplified by plumber, so a polygon's ring arrives as an array
+  nested <- .parse_json(
+    '{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}'
+  )
+  simplified <- jsonlite::fromJSON(
+    '{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}',
+    simplifyVector = TRUE
+  )
+  expect_equal(.geojson_text(nested), .geojson_text(simplified))
+  expect_equal(
+    .geojson_text(nested),
+    '{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]}'
+  )
+})
+
+test_that(".geojson_text keeps full coordinate precision", {
+  txt <- .geojson_text(
+    list(type = "Point", coordinates = list(-114.123456789, 51.987654321))
+  )
+  expect_match(txt, "-114.123456789", fixed = TRUE)
+  expect_match(txt, "51.987654321", fixed = TRUE)
+})
+
 test_that("a bare query value means equality via JSONB containment", {
   cl <- .query_sql_clause(list("eo:cloud_cover" = 4.1), 1L)
   expect_length(cl$sql, 1L)

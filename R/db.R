@@ -308,6 +308,181 @@ stac_db_delete_collection <- function(con, id) {
   invisible(NULL)
 }
 
+#' Recompute a Collection extent from the Items it holds
+#'
+#' A Collection stores the extent it was built with, and nothing updates it as
+#' Items are added or removed, so a catalog that has been ingested into over
+#' time advertises an extent that no longer describes its contents. This
+#' recomputes the spatial bounding box and temporal interval from the Items
+#' currently in the Collection and writes them back.
+#'
+#' Both the stored Collection document and the indexed columns are updated, so
+#' the refreshed extent is what `/collections` serves.
+#'
+#' The temporal interval spans `start_datetime` where an Item has one and
+#' `datetime` otherwise, and is rounded outward to whole seconds: an extent is
+#' a bound, so a start rounded up or an end rounded down would leave the
+#' Collection no longer covering its own Items.
+#'
+#' Nothing is overwritten with an unknown. A Collection whose Items carry no
+#' geometry keeps its stored bounding box, one whose Items carry no datetimes
+#' keeps its stored interval, and an empty Collection keeps both and warns,
+#' because "no Items" is not the same answer as "no extent".
+#'
+#' @section Antimeridian:
+#'
+#' The bounding box is computed with `ST_Extent`, which has no notion of a box
+#' that wraps around 180 degrees. A Collection holding Items on both sides of
+#' the antimeridian therefore gets a box spanning nearly the whole globe rather
+#' than the narrow wrapped box STAC allows, in which `west` exceeds `east`.
+#' That extent is not wrong, only loose. Set such an extent by hand.
+#'
+#' @param con A DBI connection, or a `pool::dbPool()` object.
+#' @param collection_id Collection ID.
+#' @return The extent that was written, invisibly, as a list with `spatial` and
+#'   `temporal` members. Returns the unchanged stored extent when there is
+#'   nothing to compute from.
+#' @export
+#' @examples
+#' \dontrun{
+#' stac_db_insert_item(con, item)
+#' stac_db_refresh_extent(con, "terrain")
+#' }
+stac_db_refresh_extent <- function(con, collection_id) {
+  if (
+    !is.character(collection_id) ||
+      length(collection_id) != 1L ||
+      is.na(collection_id) ||
+      !nzchar(collection_id)
+  ) {
+    cli::cli_abort("'collection_id' must be a single non-empty string.")
+  }
+
+  collection <- .db_get_collection(con, collection_id)
+  if (is.null(collection)) {
+    cli::cli_abort("Collection {.val {collection_id}} is not in the database.")
+  }
+
+  bounds <- .db_item_bounds(con, collection_id)
+  stored <- collection$extent %||% list()
+
+  spatial <- if (!is.null(bounds$bbox)) {
+    list(bbox = list(as.list(bounds$bbox)))
+  } else {
+    stored$spatial
+  }
+
+  temporal <- if (!is.null(bounds$start) || !is.null(bounds$end)) {
+    # A list keeps a NULL bound as an element, so an open-ended interval is
+    # written as the null JSON requires rather than dropping the element and
+    # leaving a one-element interval.
+    list(interval = list(list(bounds$start, bounds$end)))
+  } else {
+    stored$temporal
+  }
+
+  extent <- list(spatial = spatial, temporal = temporal)
+
+  if (is.null(bounds$bbox) && is.null(bounds$start) && is.null(bounds$end)) {
+    cli::cli_warn(
+      "Collection {.val {collection_id}} has no items with a geometry or a
+       datetime; its extent is unchanged."
+    )
+    return(invisible(extent))
+  }
+
+  DBI::dbExecute(
+    con,
+    "
+    UPDATE stac_collections SET
+      content        = jsonb_set(content, '{extent}', $2::jsonb, TRUE),
+      spatial_extent = CASE WHEN $3::text IS NULL THEN spatial_extent
+                            ELSE ST_GeomFromText($3, 4326) END,
+      datetime_start = CASE WHEN $4::text IS NULL THEN datetime_start
+                            ELSE $4::timestamptz END,
+      datetime_end   = CASE WHEN $5::text IS NULL THEN datetime_end
+                            ELSE $5::timestamptz END,
+      updated_at     = NOW()
+    WHERE id = $1
+  ",
+    params = list(
+      collection_id,
+      .stac_to_json(extent),
+      if (is.null(bounds$bbox)) NA_character_ else .bbox_to_wkt(bounds$bbox),
+      bounds$start %||% NA_character_,
+      bounds$end %||% NA_character_
+    )
+  )
+
+  invisible(extent)
+}
+
+# Compute the spatial and temporal bounds of the items in a collection.
+# Returns list(bbox = numeric(4) or NULL, start = character(1) or NULL,
+# end = character(1) or NULL).
+#
+# An item that carries start_datetime/end_datetime rather than a single
+# datetime contributes its own range, so a collection of ranged items gets an
+# interval covering all of them rather than one built from a datetime that may
+# not be there at all.
+.db_item_bounds <- function(con, collection_id) {
+  row <- DBI::dbGetQuery(
+    con,
+    "
+    SELECT
+      ST_XMin(box) AS xmin,
+      ST_YMin(box) AS ymin,
+      ST_XMax(box) AS xmax,
+      ST_YMax(box) AS ymax,
+      dt_start,
+      dt_end
+    FROM (
+      SELECT
+        ST_Extent(geometry)                        AS box,
+        MIN(COALESCE(start_datetime, datetime))    AS dt_start,
+        MAX(COALESCE(end_datetime, datetime))      AS dt_end
+      FROM stac_items
+      WHERE collection_id = $1
+    ) bounds
+  ",
+    params = list(collection_id)
+  )
+
+  bbox <- if (nrow(row) == 0L || is.na(row$xmin[[1]])) {
+    NULL
+  } else {
+    c(row$xmin[[1]], row$ymin[[1]], row$xmax[[1]], row$ymax[[1]])
+  }
+
+  list(
+    bbox = bbox,
+    start = .extent_bound(row$dt_start, "start"),
+    end = .extent_bound(row$dt_end, "end")
+  )
+}
+
+# Format one end of a temporal extent as the RFC 3339 UTC string STAC wants,
+# or NULL when there is nothing to format.
+#
+# The bound is rounded outward to a whole second. An extent is a bounding
+# interval, so a start rounded up or an end rounded down would exclude the very
+# item it was computed from, whereas rounding outward only makes the bound
+# slightly loose. Whole seconds also keep the value in the shape catalogs are
+# usually written with.
+.extent_bound <- function(x, side = c("start", "end")) {
+  side <- match.arg(side)
+  if (length(x) != 1L || is.na(x)) {
+    return(NULL)
+  }
+  secs <- as.numeric(as.POSIXct(x, tz = "UTC"))
+  secs <- if (identical(side, "start")) floor(secs) else ceiling(secs)
+  format(
+    as.POSIXct(secs, origin = "1970-01-01", tz = "UTC"),
+    "%Y-%m-%dT%H:%M:%SZ",
+    tz = "UTC"
+  )
+}
+
 .db_get_all_collections <- function(con) {
   rows <- DBI::dbGetQuery(
     con,
@@ -360,6 +535,7 @@ stac_db_delete_collection <- function(con, id) {
 .db_search_items <- function(
   con,
   bbox = NULL,
+  intersects = NULL,
   dt_start = NULL,
   dt_end = NULL,
   single_dt = FALSE,
@@ -378,6 +554,13 @@ stac_db_delete_collection <- function(con, id) {
     clauses <- c(clauses, bbox_part$sql)
     params <- c(params, bbox_part$params)
     p <- p + length(bbox_part$params)
+  }
+
+  if (!is.null(intersects)) {
+    intersects_part <- .intersects_sql_clause(intersects, p)
+    clauses <- c(clauses, intersects_part$sql)
+    params <- c(params, intersects_part$params)
+    p <- p + length(intersects_part$params)
   }
 
   if (!is.null(dt_start) || !is.null(dt_end)) {
@@ -495,6 +678,38 @@ stac_db_delete_collection <- function(con, id) {
     p + 3L
   )
   list(sql = sql, params = list(west, south, east, north))
+}
+
+# Build the SQL spatial clause and parameters for an `intersects` geometry.
+# Returns list(sql = character(1), params = list).
+#
+# ST_GeomFromGeoJSON leaves the SRID unset on GeoJSON that carries no CRS
+# member, and comparing a geometry with no SRID against the 4326 column raises
+# an error rather than returning no rows, so the SRID is stamped on here.
+# RFC 7946 fixes GeoJSON to WGS 84, which is what the column holds.
+.intersects_sql_clause <- function(intersects, p) {
+  sql <- sprintf(
+    "ST_Intersects(geometry, ST_SetSRID(ST_GeomFromGeoJSON($%d::text), 4326))",
+    p
+  )
+  list(sql = sql, params = list(.geojson_text(intersects)))
+}
+
+# Serialise a parsed GeoJSON geometry back to compact JSON text for binding as
+# a query parameter.
+#
+# The geometry arrives in one of two shapes: nested lists, when it came from a
+# GET query string and went through .parse_json(), or with its coordinates
+# simplified to a numeric array, when plumber parsed it out of a POST body.
+# jsonlite writes both back to the same JSON, and `digits = NA` keeps
+# coordinates at full precision on the way in, as .stac_to_json() does.
+.geojson_text <- function(geom) {
+  as.character(jsonlite::toJSON(
+    geom,
+    auto_unbox = TRUE,
+    null = "null",
+    digits = NA
+  ))
 }
 
 # Build SQL property-filter clauses and parameters from a STAC Query extension
@@ -732,6 +947,72 @@ stac_db_delete_collection <- function(con, id) {
     ))
   }
   vals
+}
+
+# The GeoJSON geometry types, per RFC 7946. `intersects` accepts these and
+# nothing else: a Feature or FeatureCollection is a container for a geometry,
+# not a geometry.
+.geojson_geometry_types <- c(
+  "Point",
+  "MultiPoint",
+  "LineString",
+  "MultiLineString",
+  "Polygon",
+  "MultiPolygon",
+  "GeometryCollection"
+)
+
+# Parse and validate the `intersects` search parameter, returning the geometry
+# ready for .intersects_sql_clause() or NULL when it is absent.
+#
+# It arrives as a JSON string from a GET query string and as an already-parsed
+# object from a POST body, so both are accepted. A Feature or FeatureCollection
+# is rejected rather than quietly unwrapped: answering a search the client did
+# not ask for is worse than telling it the request was malformed.
+.parse_intersects_param <- function(intersects) {
+  if (is.null(intersects)) {
+    return(NULL)
+  }
+
+  if (is.character(intersects)) {
+    if (length(intersects) != 1L || !nzchar(intersects)) {
+      return(NULL)
+    }
+    intersects <- tryCatch(
+      .parse_json(intersects),
+      error = function(e) {
+        .abort_bad_request(
+          "'intersects' must be a GeoJSON geometry object"
+        )
+      }
+    )
+  }
+
+  type <- if (is.list(intersects)) intersects$type else NULL
+  if (!is.character(type) || length(type) != 1L) {
+    .abort_bad_request("'intersects' must be a GeoJSON geometry object")
+  }
+  if (!type %in% .geojson_geometry_types) {
+    .abort_bad_request(sprintf(
+      "'intersects' must be a GeoJSON geometry object, not a '%s'",
+      type
+    ))
+  }
+
+  member <- if (identical(type, "GeometryCollection")) {
+    "geometries"
+  } else {
+    "coordinates"
+  }
+  if (is.null(intersects[[member]])) {
+    .abort_bad_request(sprintf(
+      "A GeoJSON %s must have a '%s' member",
+      type,
+      member
+    ))
+  }
+
+  intersects
 }
 
 # Reduce a 4- or 6-element bbox to c(west, south, east, north). A 6-element

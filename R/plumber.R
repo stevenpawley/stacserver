@@ -22,6 +22,11 @@
 #'   the six-element form `west,south,min_elevation,east,north,max_elevation`
 #'   is also accepted, and a box whose west edge exceeds its east edge is
 #'   treated as crossing the antimeridian
+#' * `intersects` - a GeoJSON geometry (`Point`, `LineString`, `Polygon`, their
+#'   `Multi` forms, or a `GeometryCollection`) that returned items must
+#'   intersect, given as a JSON string (GET) or an object (POST). Only
+#'   available on `/search`, and mutually exclusive with `bbox`: a request
+#'   carrying both is answered with a 400
 #' * `datetime` - ISO 8601 value or range `start/end`; use `..` for open end
 #' * `collections` - collection ID(s) to filter
 #' * `ids` - item ID(s) to filter
@@ -34,6 +39,14 @@
 #'   `{"eo:cloud_cover": {"lt": 10}}`. Supported operators are `eq`, `neq`,
 #'   `lt`, `lte`, `gt`, `gte`, `startsWith`, `endsWith`, `contains` and `in`.
 #'   `properties` is accepted as an alias for backwards compatibility.
+#'
+#' # Paging
+#'
+#' Responses carry `self`, `next` and `prev` links. Because a POST search keeps
+#' its filters in the request body, those links are POST links themselves,
+#' carrying the body for the page rather than a query string; a client that
+#' follows links rather than building URLs pages a POST search and a GET search
+#' the same way.
 #'
 #' # Connections
 #'
@@ -282,6 +295,7 @@ stac_api_router <- function(
       req,
       res,
       bbox = "",
+      intersects = "",
       datetime = "",
       collections = "",
       ids = "",
@@ -292,17 +306,21 @@ stac_api_router <- function(
         limit <- .parse_int_param(limit, "limit", 10L, min = 1L, max = 10000L)
         offset <- .parse_int_param(offset, "offset", 0L, min = 0L)
         bbox <- if (nzchar(bbox)) bbox else NULL
+        intersects <- if (nzchar(intersects)) intersects else NULL
         datetime <- if (nzchar(datetime)) datetime else NULL
 
         collections <- .split_param(collections)
         ids <- .split_param(ids)
 
         bbox_parsed <- .parse_bbox_param(bbox)
+        intersects_parsed <- .parse_intersects_param(intersects)
+        .check_spatial_filters(bbox_parsed, intersects_parsed)
         dt <- .parse_datetime_param(datetime)
 
         result <- .db_search_items(
           con,
           bbox = bbox_parsed,
+          intersects = intersects_parsed,
           dt_start = dt$start,
           dt_end = dt$end,
           single_dt = dt$single_dt,
@@ -323,6 +341,7 @@ stac_api_router <- function(
             matched = result$matched,
             extra_query = .query_string(
               bbox = bbox,
+              intersects = intersects,
               datetime = datetime,
               collections = if (!is.null(collections)) {
                 paste(collections, collapse = ",")
@@ -350,6 +369,9 @@ stac_api_router <- function(
           bbox_parsed <- .validate_bbox(bbox_parsed)
         }
 
+        intersects_parsed <- .parse_intersects_param(body$intersects)
+        .check_spatial_filters(bbox_parsed, intersects_parsed)
+
         datetime <- body$datetime %||% NULL
         collections <- .as_char_vec(body$collections)
         ids <- .as_char_vec(body$ids)
@@ -368,6 +390,7 @@ stac_api_router <- function(
         result <- .db_search_items(
           con,
           bbox = bbox_parsed,
+          intersects = intersects_parsed,
           dt_start = dt$start,
           dt_end = dt$end,
           single_dt = dt$single_dt,
@@ -386,7 +409,15 @@ stac_api_router <- function(
             base_url = paste0(base_url, "/search"),
             offset = offset,
             limit = limit,
-            matched = result$matched
+            matched = result$matched,
+            body = .search_body(
+              bbox = bbox_parsed,
+              intersects = intersects_parsed,
+              datetime = datetime,
+              collections = collections,
+              ids = ids,
+              query = query
+            )
           )
         )
       })

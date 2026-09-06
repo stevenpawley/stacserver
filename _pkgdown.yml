@@ -23,6 +23,7 @@ reference:
       - stac_db_insert_item
       - stac_db_delete_collection
       - stac_db_delete_item
+      - stac_db_refresh_extent
 
   - title: "STAC API Server"
     desc: >

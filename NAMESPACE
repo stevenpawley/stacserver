@@ -6,6 +6,7 @@ export(stac_db_delete_collection)
 export(stac_db_delete_item)
 export(stac_db_insert_collection)
 export(stac_db_insert_item)
+export(stac_db_refresh_extent)
 export(stac_db_setup)
 importFrom(stacbuildr,
   stac_collection,

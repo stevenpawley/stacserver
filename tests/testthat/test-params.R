@@ -188,3 +188,136 @@ test_that(".parse_bbox_body flattens a JSON array and reports non-numbers", {
     class = "stacserver_bad_request"
   )
 })
+
+test_that(".parse_intersects_param accepts a geometry in either shape", {
+  # A GET query string arrives as JSON text
+  from_get <- .parse_intersects_param(
+    '{"type":"Point","coordinates":[-114,51]}'
+  )
+  expect_equal(from_get$type, "Point")
+
+  # A POST body arrives already parsed
+  from_post <- .parse_intersects_param(
+    list(type = "Polygon", coordinates = list(list(list(0, 0))))
+  )
+  expect_equal(from_post$type, "Polygon")
+})
+
+test_that(".parse_intersects_param treats absent and empty input as no filter", {
+  expect_null(.parse_intersects_param(NULL))
+  expect_null(.parse_intersects_param(""))
+})
+
+test_that(".parse_intersects_param accepts every GeoJSON geometry type", {
+  for (type in .geojson_geometry_types) {
+    member <- if (type == "GeometryCollection") "geometries" else "coordinates"
+    geom <- setNames(list(type, list()), c("type", member))
+    expect_equal(.parse_intersects_param(geom)$type, type)
+  }
+})
+
+test_that(".parse_intersects_param rejects a Feature rather than unwrapping it", {
+  # Unwrapping would answer a different search than the client asked for
+  expect_error(
+    .parse_intersects_param(
+      list(type = "Feature", geometry = list(type = "Point", coordinates = list(0, 0)))
+    ),
+    "not a 'Feature'"
+  )
+  expect_error(
+    .parse_intersects_param(list(type = "FeatureCollection", features = list())),
+    class = "stacserver_bad_request"
+  )
+})
+
+test_that(".parse_intersects_param rejects malformed input as a bad request", {
+  # Not JSON at all
+  expect_error(
+    .parse_intersects_param("not json"),
+    class = "stacserver_bad_request"
+  )
+  # JSON, but no type
+  expect_error(
+    .parse_intersects_param('{"coordinates":[0,0]}'),
+    "must be a GeoJSON geometry object"
+  )
+  # A type this is not
+  expect_error(
+    .parse_intersects_param('{"type":"Circle","coordinates":[0,0]}'),
+    "not a 'Circle'"
+  )
+  # The right type with nothing in it: PostGIS would reject this, and a 500 is
+  # the wrong answer to a malformed request
+  expect_error(
+    .parse_intersects_param('{"type":"Polygon"}'),
+    "must have a 'coordinates' member"
+  )
+  expect_error(
+    .parse_intersects_param('{"type":"GeometryCollection"}'),
+    "must have a 'geometries' member"
+  )
+})
+
+test_that(".check_spatial_filters rejects bbox and intersects together", {
+  geom <- list(type = "Point", coordinates = list(0, 0))
+  expect_error(
+    .check_spatial_filters(c(-1, -1, 1, 1), geom),
+    class = "stacserver_bad_request"
+  )
+  expect_error(
+    .check_spatial_filters(c(-1, -1, 1, 1), geom),
+    "Only one of 'bbox' and 'intersects'"
+  )
+  # Either alone, or neither, is fine
+  expect_null(.check_spatial_filters(c(-1, -1, 1, 1), NULL))
+  expect_null(.check_spatial_filters(NULL, geom))
+  expect_null(.check_spatial_filters(NULL, NULL))
+})
+
+test_that(".extent_bound formats an RFC 3339 UTC string", {
+  t <- as.POSIXct("2024-06-01 18:22:31", tz = "UTC")
+  expect_equal(.extent_bound(t, "start"), "2024-06-01T18:22:31Z")
+  expect_equal(.extent_bound(t, "end"), "2024-06-01T18:22:31Z")
+})
+
+test_that(".extent_bound rounds a sub-second bound outward", {
+  # An extent is a bound: rounding the start up or the end down would leave a
+  # collection that no longer covers the item the bound came from
+  t <- as.POSIXct("2024-06-01 18:22:31.024", tz = "UTC")
+  expect_equal(.extent_bound(t, "start"), "2024-06-01T18:22:31Z")
+  expect_equal(.extent_bound(t, "end"), "2024-06-01T18:22:32Z")
+})
+
+test_that(".extent_bound converts to UTC rather than reporting local time", {
+  t <- as.POSIXct("2024-06-01 12:00:00", tz = "America/Edmonton")
+  expect_equal(.extent_bound(t, "start"), "2024-06-01T18:00:00Z")
+})
+
+test_that(".extent_bound treats a missing bound as open", {
+  expect_null(.extent_bound(NA, "start"))
+  expect_null(.extent_bound(as.POSIXct(NA), "end"))
+  expect_null(.extent_bound(character(0), "start"))
+})
+
+test_that("an open temporal bound is written as null, not dropped", {
+  # An interval with an open end reaches clients only if the NULL survives
+  # into the array; dropping it would leave a one-element interval, which is
+  # not a valid STAC extent. Items ingested through stacbuildr always carry a
+  # closed bound, so this is only reachable for data written by other means.
+  extent <- list(
+    spatial = list(bbox = list(as.list(c(-1, -2, 3, 4)))),
+    temporal = list(interval = list(list("2024-01-01T00:00:00Z", NULL)))
+  )
+  expect_match(
+    .stac_to_json(extent),
+    '"interval":[["2024-01-01T00:00:00Z",null]]',
+    fixed = TRUE
+  )
+
+  open_start <- list(temporal = list(interval = list(list(NULL, "2024-01-01T00:00:00Z"))))
+  expect_match(
+    .stac_to_json(open_start),
+    '"interval":[[null,"2024-01-01T00:00:00Z"]]',
+    fixed = TRUE
+  )
+})

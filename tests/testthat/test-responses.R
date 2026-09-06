@@ -282,3 +282,112 @@ test_that("the response serializer unboxes scalars and writes nulls", {
     '{"roles":["data"]}'
   )
 })
+
+test_that(".pagination_links pages a POST search with POST links", {
+  body <- list(collections = list("terrain"), bbox = list(-1, -2, 3, 4))
+  links <- .pagination_links(
+    "https://example.com/search",
+    offset = 10L,
+    limit = 10L,
+    matched = 100L,
+    body = body
+  )
+  expect_setequal(rels(links), c("self", "next", "prev"))
+
+  for (lnk in links) {
+    expect_equal(lnk$method, "POST")
+    # The href carries no query string: the parameters travel in the body
+    expect_equal(lnk$href, "https://example.com/search")
+    # merge = FALSE says the body is complete, not a fragment to merge in
+    expect_false(lnk$merge)
+    expect_equal(lnk$body$collections, list("terrain"))
+    expect_equal(lnk$body$bbox, list(-1, -2, 3, 4))
+    expect_equal(lnk$body$limit, 10L)
+  }
+
+  nxt <- Filter(function(l) l$rel == "next", links)[[1]]
+  prv <- Filter(function(l) l$rel == "prev", links)[[1]]
+  expect_equal(nxt$body$offset, 20L)
+  expect_equal(prv$body$offset, 0L)
+})
+
+test_that("POST paging carries the filters rather than dropping them", {
+  # A GET-shaped next link would page through the whole catalog, because the
+  # filters of a POST search live in the body and not in the URL
+  body <- .search_body(
+    bbox = c(-114.5, 50.5, -113.5, 51.5),
+    datetime = "2024-06-01T00:00:00Z/..",
+    collections = "terrain",
+    query = list("eo:cloud_cover" = list(lt = 10))
+  )
+  links <- .pagination_links(
+    "https://example.com/search",
+    offset = 0L,
+    limit = 10L,
+    matched = 100L,
+    body = body
+  )
+  nxt <- Filter(function(l) l$rel == "next", links)[[1]]
+
+  expect_equal(nxt$body$datetime, "2024-06-01T00:00:00Z/..")
+  expect_equal(nxt$body$query, list("eo:cloud_cover" = list(lt = 10)))
+  expect_equal(nxt$body$collections, list("terrain"))
+  expect_equal(nxt$body$offset, 10L)
+})
+
+test_that("a POST search with no filters still pages by POST", {
+  links <- .pagination_links(
+    "https://example.com/search",
+    offset = 0L,
+    limit = 10L,
+    matched = 100L,
+    body = .search_body()
+  )
+  nxt <- Filter(function(l) l$rel == "next", links)[[1]]
+  expect_equal(nxt$method, "POST")
+  expect_equal(nxt$body, list(limit = 10L, offset = 10L))
+})
+
+test_that(".pagination_links still builds GET links when given no body", {
+  links <- .pagination_links("https://example.com/search", 0L, 10L, 100L)
+  for (lnk in links) {
+    expect_null(lnk$method)
+    expect_null(lnk$body)
+  }
+})
+
+test_that(".search_body drops absent filters and keeps arrays as arrays", {
+  expect_equal(.search_body(), list())
+
+  # The serializer unboxes length-one vectors, so a single id has to be a list
+  # or it would be written back as a string and rejected on the next request
+  body <- .search_body(collections = "terrain", ids = "dem-001")
+  expect_equal(body$collections, list("terrain"))
+  expect_equal(body$ids, list("dem-001"))
+  expect_equal(
+    as.character(environment(.stac_serializer())$serialize_fn(body)),
+    '{"collections":["terrain"],"ids":["dem-001"]}'
+  )
+})
+
+test_that(".search_body passes a geometry through unchanged", {
+  geom <- list(type = "Point", coordinates = list(-114, 51))
+  expect_equal(.search_body(intersects = geom)$intersects, geom)
+})
+
+test_that(".link carries body and merge only when supplied", {
+  plain <- .link("next", "https://example.com/search")
+  expect_null(plain$body)
+  expect_null(plain$merge)
+
+  posted <- .link(
+    "next",
+    "https://example.com/search",
+    "application/geo+json",
+    method = "POST",
+    body = list(limit = 10L),
+    merge = FALSE
+  )
+  expect_equal(posted$body, list(limit = 10L))
+  expect_false(posted$merge)
+})

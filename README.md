@@ -35,7 +35,7 @@ remotes::install_github("stevenpawley/stacserver")
 | `/collections/{id}` | A single collection |
 | `/collections/{id}/items` | Items in a collection (`bbox`, `datetime`, `limit`) |
 | `/collections/{id}/items/{itemId}` | A single item |
-| `/search` | Item search, `GET` and `POST` |
+| `/search` | Item search, `GET` and `POST` (`bbox` or `intersects`, `datetime`, `collections`, `ids`, `limit`, `offset`, and `query` on `POST`) |
 
 ## Asset signing
 

@@ -129,6 +129,88 @@ test_that("a bbox crossing the antimeridian matches both sides", {
   )
 })
 
+test_that("intersects search finds only items inside the geometry", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid))
+  stac_db_insert_item(con, test_item("inside", cid, -114.0, 51.0, "2024-06-01T00:00:00Z"))
+  stac_db_insert_item(con, test_item("outside", cid, 10.0, 10.0, "2024-06-01T00:00:00Z"))
+
+  poly <- .parse_intersects_param(paste0(
+    '{"type":"Polygon","coordinates":[[',
+    '[-114.5,50.5],[-113.5,50.5],[-113.5,51.5],[-114.5,51.5],[-114.5,50.5]',
+    ']]}'
+  ))
+
+  res <- .db_search_items(con, intersects = poly, collections = cid)
+  expect_equal(res$matched, 1L)
+  expect_equal(res$items[[1]]$id, "inside")
+})
+
+test_that("intersects follows the geometry, not its bounding box", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid))
+  # Both points sit inside the triangle's bounding box; only one is inside the
+  # triangle itself, which is the whole reason intersects exists alongside bbox
+  stac_db_insert_item(con, test_item("in-triangle", cid, 0.5, 0.2, "2024-06-01T00:00:00Z"))
+  stac_db_insert_item(con, test_item("in-bbox-only", cid, 0.05, 0.9, "2024-06-01T00:00:00Z"))
+
+  triangle <- .parse_intersects_param(
+    '{"type":"Polygon","coordinates":[[[0,0],[1,0],[0.5,1],[0,0]]]}'
+  )
+
+  res <- .db_search_items(con, intersects = triangle, collections = cid)
+  expect_equal(res$matched, 1L)
+  expect_equal(res$items[[1]]$id, "in-triangle")
+})
+
+test_that("intersects accepts a geometry simplified by the POST body parser", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid))
+  stac_db_insert_item(con, test_item("inside", cid, 0.5, 0.5, "2024-06-01T00:00:00Z"))
+
+  # plumber simplifies a polygon's rings into an array on the way in, so the
+  # shape reaching the search differs from the GET path even for the same JSON
+  simplified <- jsonlite::fromJSON(
+    '{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}',
+    simplifyVector = TRUE
+  )
+
+  res <- .db_search_items(
+    con,
+    intersects = .parse_intersects_param(simplified),
+    collections = cid
+  )
+  expect_equal(res$matched, 1L)
+})
+
+test_that("intersects combines with the other filters", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid))
+  stac_db_insert_item(con, test_item("early", cid, 0.5, 0.5, "2024-06-01T00:00:00Z"))
+  stac_db_insert_item(con, test_item("late", cid, 0.5, 0.5, "2024-07-01T00:00:00Z"))
+
+  square <- .parse_intersects_param(
+    '{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1],[0,0]]]}'
+  )
+
+  res <- .db_search_items(
+    con,
+    intersects = square,
+    dt_start = "2024-06-15T00:00:00Z",
+    collections = cid
+  )
+  expect_equal(res$matched, 1L)
+  expect_equal(res$items[[1]]$id, "late")
+})
+
 test_that("datetime search covers the four interval forms", {
   skip_if_no_pg()
   con <- test_con()
@@ -290,4 +372,156 @@ test_that("stac_db_setup can be run repeatedly", {
   con <- test_con()
   expect_no_error(stac_db_setup(con))
   expect_no_error(stac_db_setup(con))
+})
+
+test_that("refreshing an extent computes it from the items", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  # The declared extent is deliberately wrong for the items that follow
+  stac_db_insert_collection(con, test_collection(cid, bbox = c(0, 0, 1, 1)))
+  stac_db_insert_item(con, test_item("a", cid, -114.0, 51.0, "2024-06-01T00:00:00Z"))
+  stac_db_insert_item(con, test_item("b", cid, -113.0, 52.0, "2024-06-03T00:00:00Z"))
+
+  extent <- stac_db_refresh_extent(con, cid)
+
+  expect_equal(unlist(extent$spatial$bbox[[1]]), c(-114, 51, -113, 52))
+  expect_equal(
+    unlist(extent$temporal$interval[[1]]),
+    c("2024-06-01T00:00:00Z", "2024-06-03T00:00:00Z")
+  )
+})
+
+test_that("a refreshed extent is what the API would serve", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid, bbox = c(0, 0, 1, 1)))
+  stac_db_insert_item(con, test_item("a", cid, -114.0, 51.0, "2024-06-01T00:00:00Z"))
+
+  stac_db_refresh_extent(con, cid)
+
+  # The endpoints serve the stored document, so updating only the indexed
+  # columns would leave /collections advertising the stale extent
+  stored <- .db_get_collection(con, cid)
+  expect_equal(unlist(stored$extent$spatial$bbox[[1]]), c(-114, 51, -114, 51))
+  expect_equal(stored$extent$temporal$interval[[1]][[1]], "2024-06-01T00:00:00Z")
+
+  cols <- DBI::dbGetQuery(
+    con,
+    "SELECT ST_XMin(spatial_extent) AS xmin, datetime_start
+     FROM stac_collections WHERE id = $1",
+    params = list(cid)
+  )
+  expect_equal(cols$xmin[[1]], -114)
+  expect_equal(
+    format(cols$datetime_start[[1]], "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    "2024-06-01T00:00:00Z"
+  )
+})
+
+test_that("refreshing spans the ranges of items that carry them", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid))
+
+  ranged <- stacbuildr::stac_item(
+    id = "ranged",
+    geometry = list(type = "Point", coordinates = c(-114, 51)),
+    bbox = c(-114, 51, -114, 51),
+    datetime = NULL,
+    start_datetime = "2024-01-01T00:00:00Z",
+    end_datetime = "2024-12-31T00:00:00Z",
+    assets = list()
+  )
+  ranged@collection <- cid
+  stac_db_insert_item(con, ranged)
+  stac_db_insert_item(con, test_item("mid", cid, -114, 51, "2024-06-01T00:00:00Z"))
+
+  extent <- stac_db_refresh_extent(con, cid)
+
+  # The interval covers the ranged item, not just the instantaneous one
+  expect_equal(
+    unlist(extent$temporal$interval[[1]]),
+    c("2024-01-01T00:00:00Z", "2024-12-31T00:00:00Z")
+  )
+})
+
+test_that("refreshing keeps a stored bound it cannot compute", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid, bbox = c(0, 0, 1, 1)))
+
+  # A STAC Item may carry a null geometry, and one that does can never
+  # contribute to a bounding box
+  placeless <- stacbuildr::stac_item(
+    id = "placeless",
+    geometry = NULL,
+    bbox = NULL,
+    datetime = "2024-06-01T00:00:00Z",
+    assets = list()
+  )
+  placeless@collection <- cid
+  stac_db_insert_item(con, placeless)
+
+  extent <- stac_db_refresh_extent(con, cid)
+
+  # Temporal is recomputed; the declared box survives rather than being
+  # overwritten with an unknown
+  expect_equal(
+    unlist(extent$temporal$interval[[1]]),
+    c("2024-06-01T00:00:00Z", "2024-06-01T00:00:00Z")
+  )
+  expect_equal(unlist(extent$spatial$bbox[[1]]), c(0, 0, 1, 1))
+})
+
+test_that("refreshing an empty collection warns and changes nothing", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid, bbox = c(0, 0, 1, 1)))
+
+  expect_warning(
+    extent <- stac_db_refresh_extent(con, cid),
+    "no items with a geometry or a datetime"
+  )
+
+  # "No items" is not an answer about the extent, so the declared one stands
+  expect_equal(unlist(extent$spatial$bbox[[1]]), c(0, 0, 1, 1))
+  stored <- .db_get_collection(con, cid)
+  expect_equal(unlist(stored$extent$spatial$bbox[[1]]), c(0, 0, 1, 1))
+})
+
+test_that("refreshing tracks items being deleted", {
+  skip_if_no_pg()
+  con <- test_con()
+  cid <- test_collection_id(con)
+  stac_db_insert_collection(con, test_collection(cid))
+  stac_db_insert_item(con, test_item("a", cid, -114.0, 51.0, "2024-06-01T00:00:00Z"))
+  stac_db_insert_item(con, test_item("far", cid, 10.0, 10.0, "2024-07-01T00:00:00Z"))
+
+  stac_db_refresh_extent(con, cid)
+  stac_db_delete_item(con, "far", cid)
+  extent <- stac_db_refresh_extent(con, cid)
+
+  expect_equal(unlist(extent$spatial$bbox[[1]]), c(-114, 51, -114, 51))
+  expect_equal(
+    unlist(extent$temporal$interval[[1]]),
+    c("2024-06-01T00:00:00Z", "2024-06-01T00:00:00Z")
+  )
+})
+
+test_that("refreshing rejects an unknown collection and a bad id", {
+  skip_if_no_pg()
+  con <- test_con()
+
+  expect_error(
+    stac_db_refresh_extent(con, "no-such-collection"),
+    "is not in the database"
+  )
+  expect_error(stac_db_refresh_extent(con, ""), "single non-empty string")
+  expect_error(stac_db_refresh_extent(con, c("a", "b")), "single non-empty string")
+  expect_error(stac_db_refresh_extent(con, NA_character_), "single non-empty string")
 })

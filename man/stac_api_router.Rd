@@ -54,6 +54,11 @@ Returns a \code{plumber} router pre-wired with the following endpoints:
 the six-element form \verb{west,south,min_elevation,east,north,max_elevation}
 is also accepted, and a box whose west edge exceeds its east edge is
 treated as crossing the antimeridian
+\item \code{intersects} - a GeoJSON geometry (\code{Point}, \code{LineString}, \code{Polygon}, their
+\code{Multi} forms, or a \code{GeometryCollection}) that returned items must
+intersect, given as a JSON string (GET) or an object (POST). Only
+available on \verb{/search}, and mutually exclusive with \code{bbox}: a request
+carrying both is answered with a 400
 \item \code{datetime} - ISO 8601 value or range \code{start/end}; use \code{..} for open end
 \item \code{collections} - collection ID(s) to filter
 \item \code{ids} - item ID(s) to filter
@@ -68,6 +73,14 @@ A bare value means equality; an object selects operators:
 \code{properties} is accepted as an alias for backwards compatibility.
 }
 }
+\section{Paging}{
+Responses carry \code{self}, \code{next} and \code{prev} links. Because a POST search keeps
+its filters in the request body, those links are POST links themselves,
+carrying the body for the page rather than a query string; a client that
+follows links rather than building URLs pages a POST search and a GET search
+the same way.
+}
+
 \section{Connections}{
 \code{con} is held for the lifetime of the router. A bare \code{\link[DBI:dbConnect]{DBI::dbConnect()}}
 connection will eventually be closed by the server or a connection pooler,

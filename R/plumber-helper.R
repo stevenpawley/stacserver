@@ -66,15 +66,32 @@
 #'   `"application/json"`, `"application/geo+json"`).
 #' @param method Optional HTTP method (e.g. `"GET"`, `"POST"`); used to
 #'   distinguish multiple links with the same `rel` but different methods.
+#' @param body Optional request body to send when following the link. Only
+#'   meaningful alongside `method = "POST"`.
+#' @param merge Optional flag saying whether `body` is a fragment to merge into
+#'   the original request body (`TRUE`) or the whole body (`FALSE`).
 #' @return A named list representing a single STAC link object.
 #' @noRd
-.link <- function(rel, href, type = NULL, method = NULL) {
+.link <- function(
+  rel,
+  href,
+  type = NULL,
+  method = NULL,
+  body = NULL,
+  merge = NULL
+) {
   lnk <- list(rel = rel, href = href)
   if (!is.null(type)) {
     lnk$type <- type
   }
   if (!is.null(method)) {
     lnk$method <- method
+  }
+  if (!is.null(body)) {
+    lnk$body <- body
+  }
+  if (!is.null(merge)) {
+    lnk$merge <- merge
   }
   lnk
 }
@@ -149,13 +166,22 @@
 #' the end of results (`offset + limit >= matched`); `prev` is omitted on the
 #' first page (`offset == 0`).
 #'
+#' A search made with POST cannot be paged with a URL: its filters live in the
+#' request body, and a link carrying only `?limit=&offset=` would drop them and
+#' page through the whole catalog instead. For those the links carry
+#' `method = "POST"` and the complete body for the page, with `merge = FALSE`
+#' saying that the body replaces the original rather than being merged into it.
+#'
 #' @param base_url Base URL of the endpoint (no query string).
 #' @param offset Zero-based index of the first item on the current page.
 #' @param limit Maximum number of items per page.
 #' @param matched Total number of items matching the query.
 #' @param extra_query Optional pre-encoded query string fragment (without
 #'   leading `?` or `&`) for additional filter parameters such as `bbox` or
-#'   `datetime`.
+#'   `datetime`. Used for GET paging only.
+#' @param body Search parameters of the originating POST body, excluding
+#'   `limit` and `offset`, which each link sets for its own page. `NULL` (the
+#'   default) produces GET-style links built from `extra_query`.
 #' @return A list of STAC link objects.
 #' @noRd
 .pagination_links <- function(
@@ -163,53 +189,45 @@
   offset,
   limit,
   matched,
-  extra_query = ""
+  extra_query = "",
+  body = NULL
 ) {
   # The base query string always carries limit and offset, so any additional
   # filters are appended with "&" and an absent filter appends nothing at all.
   sep <- if (nzchar(extra_query)) "&" else ""
-  links <- list(
+
+  page_link <- function(rel, page_offset) {
+    if (!is.null(body)) {
+      return(.link(
+        rel,
+        base_url,
+        "application/geo+json",
+        method = "POST",
+        body = c(body, list(limit = limit, offset = page_offset)),
+        merge = FALSE
+      ))
+    }
     .link(
-      "self",
-      paste0(base_url, "?limit=", limit, "&offset=", offset, sep, extra_query),
+      rel,
+      paste0(
+        base_url,
+        "?limit=",
+        limit,
+        "&offset=",
+        page_offset,
+        sep,
+        extra_query
+      ),
       "application/geo+json"
     )
-  )
+  }
+
+  links <- list(page_link("self", offset))
   if (offset + limit < matched) {
-    links <- c(
-      links,
-      list(.link(
-        "next",
-        paste0(
-          base_url,
-          "?limit=",
-          limit,
-          "&offset=",
-          offset + limit,
-          sep,
-          extra_query
-        ),
-        "application/geo+json"
-      ))
-    )
+    links <- c(links, list(page_link("next", offset + limit)))
   }
   if (offset > 0L) {
-    links <- c(
-      links,
-      list(.link(
-        "prev",
-        paste0(
-          base_url,
-          "?limit=",
-          limit,
-          "&offset=",
-          max(0L, offset - limit),
-          sep,
-          extra_query
-        ),
-        "application/geo+json"
-      ))
-    )
+    links <- c(links, list(page_link("prev", max(0L, offset - limit))))
   }
   links
 }
@@ -349,6 +367,73 @@
     class = c("stacserver_bad_request", "error", "condition"),
     list(message = msg, call = NULL)
   ))
+}
+
+#' Rebuild the search parameters of a POST body for its paging links.
+#'
+#' Collects the filters a POST search was made with, dropping those it did not
+#' use, so that `.pagination_links()` can send them again for the next page.
+#' `limit` and `offset` are left out: each link sets its own.
+#'
+#' Values that JSON requires to be arrays are wrapped in a list, because the
+#' response serializer unboxes length-one vectors and a single collection id
+#' would otherwise be written back as a string.
+#'
+#' @param bbox Parsed `bbox` numeric vector, or `NULL`.
+#' @param intersects Parsed `intersects` geometry, or `NULL`.
+#' @param datetime Raw `datetime` string, or `NULL`.
+#' @param collections,ids Character vectors, or `NULL`.
+#' @param query Parsed Query extension object, or `NULL`.
+#' @return A named list of search parameters, possibly empty.
+#' @noRd
+.search_body <- function(
+  bbox = NULL,
+  intersects = NULL,
+  datetime = NULL,
+  collections = NULL,
+  ids = NULL,
+  query = NULL
+) {
+  body <- list()
+  if (!is.null(bbox)) {
+    body$bbox <- as.list(bbox)
+  }
+  if (!is.null(intersects)) {
+    body$intersects <- intersects
+  }
+  if (!is.null(datetime)) {
+    body$datetime <- datetime
+  }
+  if (!is.null(collections)) {
+    body$collections <- as.list(collections)
+  }
+  if (!is.null(ids)) {
+    body$ids <- as.list(ids)
+  }
+  if (!is.null(query)) {
+    body$query <- query
+  }
+  body
+}
+
+#' Reject a search that carries both spatial filters.
+#'
+#' STAC API forbids `bbox` and `intersects` in the same request: they are two
+#' ways of asking the same question and the specification does not say what
+#' their combination would mean. Rejecting is safer than picking one, which
+#' would answer a search the client did not ask for.
+#'
+#' @param bbox Parsed `bbox`, or `NULL`.
+#' @param intersects Parsed `intersects` geometry, or `NULL`.
+#' @return `NULL`, invisibly.
+#' @noRd
+.check_spatial_filters <- function(bbox, intersects) {
+  if (!is.null(bbox) && !is.null(intersects)) {
+    .abort_bad_request(
+      "Only one of 'bbox' and 'intersects' may be supplied"
+    )
+  }
+  invisible(NULL)
 }
 
 #' Run a request handler, turning bad-request conditions into 400 responses.
