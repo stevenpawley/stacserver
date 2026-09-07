@@ -395,7 +395,7 @@
   }
 
   n <- suppressWarnings(as.numeric(x))
-  if (is.na(n) || n != trunc(n)) {
+  if (!is.finite(n) || n != trunc(n)) {
     .abort_bad_request(sprintf("'%s' must be an integer, got '%s'", name, x))
   }
   if (!is.null(min) && n < min) {
@@ -403,6 +403,11 @@
   }
   if (!is.null(max) && n > max) {
     .abort_bad_request(sprintf("'%s' must be at most %d", name, as.integer(max)))
+  }
+  # R reserves the most negative 32-bit integer for NA. Check before
+  # conversion so overflow cannot silently become a SQL NULL parameter.
+  if (n < -.Machine$integer.max || n > .Machine$integer.max) {
+    .abort_bad_request(sprintf("'%s' is outside the supported integer range", name))
   }
 
   as.integer(n)

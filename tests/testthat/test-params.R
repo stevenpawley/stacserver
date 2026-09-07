@@ -179,6 +179,39 @@ test_that(".parse_int_param enforces its bounds", {
   expect_equal(.parse_int_param("10000", "limit", 10L, min = 1L, max = 10000L), 10000L)
 })
 
+test_that("integer validation rejects non-finite values and overflow with HTTP 400", {
+  for (value in c(Inf, -Inf, NaN, NA_real_, 2147483648, -2147483648, 1e100)) {
+    for (input in list(value, as.character(value))) {
+      res <- new.env()
+      result <- .with_bad_request(res, .parse_int_param(input, "offset", 0L))
+      expect_identical(res$status, 400L)
+      expect_identical(result$code, 400L)
+    }
+  }
+  expect_identical(.parse_int_param("2147483647", "offset", 0L), .Machine$integer.max)
+  expect_identical(.parse_int_param("-2147483647", "offset", 0L), -.Machine$integer.max)
+})
+
+test_that("GET and POST bbox validation rejects non-finite coordinates with HTTP 400", {
+  for (value in c(Inf, -Inf, NaN, NA_real_)) {
+    for (size in c(4L, 6L)) {
+      # Include elevation positions as well as horizontal coordinates.
+      for (position in seq_len(size)) {
+        bbox <- seq_len(size)
+        bbox[position] <- value
+        res <- new.env()
+        result <- .with_bad_request(res, .parse_bbox_param(paste(bbox, collapse = ",")))
+        expect_identical(res$status, 400L)
+        expect_identical(result$code, 400L)
+        res <- new.env()
+        result <- .with_bad_request(res, .validate_bbox(.parse_bbox_body(as.list(bbox))))
+        expect_identical(res$status, 400L)
+        expect_identical(result$code, 400L)
+      }
+    }
+  }
+})
+
 test_that(".parse_bbox_body flattens a JSON array and reports non-numbers", {
   expect_equal(.parse_bbox_body(list(1, 2, 3, 4)), c(1, 2, 3, 4))
   expect_null(.parse_bbox_body(NULL))

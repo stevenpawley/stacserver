@@ -725,10 +725,11 @@ stac_db_delete_collection <- function(con, id) {
 # Shared validation for a bbox arriving as a query string or a JSON array.
 # Signals a bad-request condition so the router can answer with a 400.
 .validate_bbox <- function(vals) {
-  if (!length(vals) %in% c(4L, 6L) || any(is.na(vals))) {
+  if (!length(vals) %in% c(4L, 6L) || any(!is.finite(vals))) {
     .abort_bad_request(paste(
       "'bbox' must be four numbers (west,south,east,north)",
-      "or six (west,south,min_elevation,east,north,max_elevation)"
+      "or six (west,south,min_elevation,east,north,max_elevation);",
+      "all values must be finite"
     ))
   }
   vals
