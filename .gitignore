@@ -7,3 +7,18 @@ docs
 inst/doc
 .httr-oauth
 .quarto
+
+# Credentials and local environment - never commit these.
+# .Renviron in particular is where AZURE_STORAGE_ENDPOINT and database
+# passwords normally live.
+.Renviron
+.env
+.env.*
+!.env.example
+
+# Local tooling and scratch space, mirroring .Rbuildignore
+.claude
+.positai
+.venv
+.python-version
+scratch
