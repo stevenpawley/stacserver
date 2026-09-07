@@ -1,6 +1,6 @@
 # MIT License
 
-Copyright (c) 2026 stacserver authors
+Copyright (c) 2026 Steven Pawley
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files (the
