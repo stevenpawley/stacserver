@@ -477,3 +477,96 @@
     digits = NA
   )
 }
+
+#' Validate and normalise the `cors_origins` argument.
+#'
+#' Returns `NULL` (no CORS headers), `"*"`, or a lower-cased character vector
+#' of allowed origins. Origins are compared case-insensitively because a
+#' browser lower-cases the scheme and host before sending them.
+#'
+#' @param origins `NULL`, `"*"`, or a character vector of origins.
+#' @return `NULL`, `"*"`, or a lower-cased character vector.
+#' @noRd
+.check_cors_origins <- function(origins) {
+  if (is.null(origins)) {
+    return(NULL)
+  }
+  if (!is.character(origins) || length(origins) == 0L || anyNA(origins)) {
+    cli::cli_abort(
+      "'cors_origins' must be NULL, {.val *}, or a character vector of origins."
+    )
+  }
+
+  if ("*" %in% origins) {
+    if (length(origins) > 1L) {
+      cli::cli_abort(c(
+        "'cors_origins' cannot combine {.val *} with named origins.",
+        i = "{.val *} already allows every origin."
+      ))
+    }
+    return("*")
+  }
+
+  # An origin is a scheme, host and optional port. A path is never part of one,
+  # so a configured path could never match what a browser sends - which would
+  # fail as an unexplained CORS error rather than as a configuration error.
+  bad <- origins[!grepl("^https?://[^/?#]+$", origins)]
+  if (length(bad) > 0L) {
+    cli::cli_abort(c(
+      "Each 'cors_origins' entry must be a scheme, host and optional port.",
+      x = "Not an origin: {.val {bad}}",
+      i = "A page at {.url https://example.com/browser} sends the origin
+           {.val https://example.com}, so drop any path and trailing slash."
+    ))
+  }
+
+  tolower(origins)
+}
+
+#' Build the CORS filter for a set of allowed origins.
+#'
+#' `origins` is either `"*"` or a vector of exact origins. In the second case
+#' the request's own `Origin` is echoed back when it is on the list, and
+#' `Vary: Origin` is set so that a shared cache cannot serve one origin's
+#' allow-header to another.
+#'
+#' @param origins `"*"` or a lower-cased character vector of allowed origins.
+#' @return A plumber filter function.
+#' @noRd
+.cors_filter <- function(origins) {
+  wildcard <- identical(origins, "*")
+
+  function(req, res) {
+    origin <- req$HTTP_ORIGIN
+
+    allowed <- if (wildcard) {
+      "*"
+    } else if (!is.null(origin) && tolower(origin) %in% origins) {
+      origin
+    } else {
+      NULL
+    }
+
+    if (!is.null(allowed)) {
+      res$setHeader("Access-Control-Allow-Origin", allowed)
+      res$setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+      res$setHeader(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Accept, Authorization"
+      )
+    }
+
+    # The response varies by origin whenever the header is not a constant, so
+    # it is set even for an origin that was refused.
+    if (!wildcard) {
+      res$setHeader("Vary", "Origin")
+    }
+
+    if (identical(req$REQUEST_METHOD, "OPTIONS")) {
+      res$status <- 200L
+      return(list())
+    }
+
+    plumber::forward()
+  }
+}

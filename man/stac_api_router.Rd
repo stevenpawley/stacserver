@@ -9,7 +9,8 @@ stac_api_router(
   base_url = "http://localhost:8000",
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
-  sign_fn = NULL
+  sign_fn = NULL,
+  cors_origins = NULL
 )
 }
 \arguments{
@@ -27,6 +28,11 @@ every item response are signed before being returned. Pass
 \code{\link[=azure_signer]{azure_signer()}} to sign Azure Blob Storage hrefs with a managed identity,
 or supply your own function for another backend. Default \code{NULL}
 (no signing).}
+
+\item{cors_origins}{Origins permitted to read responses from browser
+JavaScript, as a character vector of \verb{scheme://host[:port]} values with no
+path, e.g. \code{"https://browser.example.com"}. \code{"*"} allows every origin.
+Default \code{NULL} sends no CORS headers at all. See \emph{Cross-origin requests}.}
 }
 \value{
 A \code{plumber} router object.
@@ -92,5 +98,33 @@ itself:
 Setting that content to "Anyone - no login required", or running the router
 without an authenticating proxy in front of it, publishes the whole catalog
 to anyone who can reach the port.
+}
+
+\section{Cross-origin requests}{
+\code{cors_origins} controls the \code{Access-Control-Allow-Origin} header, which
+decides whether JavaScript running on \emph{another} website may read this API's
+responses. It is not access control: the request still reaches the server
+and is served either way, and non-browser clients — \code{rstac}, GDAL, QGIS,
+Python — ignore the header entirely. It only stops a page the user happens
+to be visiting from reading the catalog on their behalf.
+
+The default of \code{NULL} sends no CORS headers, which is right for an API
+consumed by those clients or by a browser app served from the same origin.
+Name an origin only for a browser app hosted elsewhere:
+
+\if{html}{\out{<div class="sourceCode r">}}\preformatted{stac_api_router(con, cors_origins = "https://browser.example.com")
+}\if{html}{\out{</div>}}
+
+An origin is a scheme, host and optional port with no path, because that is
+all a browser sends: a page at \verb{https://example.com/browser} sends the
+origin \verb{https://example.com}.
+
+This matters more when \code{sign_fn} is set, because responses then carry live
+signed asset URLs. \code{"*"} lets any site on the internet read those, which is
+only appropriate for a genuinely public catalog. Note also that a
+cross-origin browser app cannot authenticate to Posit Connect: preflight
+requests carry no credentials, so Connect rejects them before this router
+sees them. Serving the browser app from the same origin as the API avoids
+the problem entirely.
 }
 

@@ -62,6 +62,35 @@
 #' without an authenticating proxy in front of it, publishes the whole catalog
 #' to anyone who can reach the port.
 #'
+#' # Cross-origin requests
+#'
+#' `cors_origins` controls the `Access-Control-Allow-Origin` header, which
+#' decides whether JavaScript running on *another* website may read this API's
+#' responses. It is not access control: the request still reaches the server
+#' and is served either way, and non-browser clients — `rstac`, GDAL, QGIS,
+#' Python — ignore the header entirely. It only stops a page the user happens
+#' to be visiting from reading the catalog on their behalf.
+#'
+#' The default of `NULL` sends no CORS headers, which is right for an API
+#' consumed by those clients or by a browser app served from the same origin.
+#' Name an origin only for a browser app hosted elsewhere:
+#'
+#' ```r
+#' stac_api_router(con, cors_origins = "https://browser.example.com")
+#' ```
+#'
+#' An origin is a scheme, host and optional port with no path, because that is
+#' all a browser sends: a page at `https://example.com/browser` sends the
+#' origin `https://example.com`.
+#'
+#' This matters more when `sign_fn` is set, because responses then carry live
+#' signed asset URLs. `"*"` lets any site on the internet read those, which is
+#' only appropriate for a genuinely public catalog. Note also that a
+#' cross-origin browser app cannot authenticate to Posit Connect: preflight
+#' requests carry no credentials, so Connect rejects them before this router
+#' sees them. Serving the browser app from the same origin as the API avoids
+#' the problem entirely.
+#'
 #' @param con A DBI connection, or a `pool::dbPool()` object.
 #' @param base_url Base URL of the API (no trailing slash). Used in link hrefs.
 #' @param title Human-readable API title.
@@ -72,6 +101,10 @@
 #'   [azure_signer()] to sign Azure Blob Storage hrefs with a managed identity,
 #'   or supply your own function for another backend. Default `NULL`
 #'   (no signing).
+#' @param cors_origins Origins permitted to read responses from browser
+#'   JavaScript, as a character vector of `scheme://host[:port]` values with no
+#'   path, e.g. `"https://browser.example.com"`. `"*"` allows every origin.
+#'   Default `NULL` sends no CORS headers at all. See *Cross-origin requests*.
 #' @return A `plumber` router object.
 #' @export
 stac_api_router <- function(
@@ -79,8 +112,11 @@ stac_api_router <- function(
   base_url = "http://localhost:8000",
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
-  sign_fn = NULL
+  sign_fn = NULL,
+  cors_origins = NULL
 ) {
+  cors_origins <- .check_cors_origins(cors_origins)
+
   # Custom serializer (how results are returned back to the client)
   # JSON is default but for STAC API compliance we are altering the
   # defaults to unwrap single element R vectors and provide explicit
@@ -90,22 +126,14 @@ stac_api_router <- function(
   pr <- plumber::pr() |>
     plumber::pr_set_serializer(.stac_serializer())
 
-  # CORS - answers the pre-flight OPTIONS request directly.
-  # Only needed by a browser on another origin; a page served from the same
-  # origin as the API never involves CORS, and R and Python clients ignore it.
-  pr <- plumber::pr_filter(pr, "cors", function(req, res) {
-    res$setHeader("Access-Control-Allow-Origin", "*")
-    res$setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-    res$setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Accept, Authorization"
-    )
-    if (identical(req$REQUEST_METHOD, "OPTIONS")) {
-      res$status <- 200L
-      return(list())
-    }
-    plumber::forward()
-  })
+  # CORS - answers the pre-flight OPTIONS request directly. Only needed by a
+  # browser on another origin; a page served from the same origin as the API
+  # never involves CORS, and R and Python clients ignore it. The filter is
+  # registered only when an origin is configured, so the default API sends no
+  # CORS headers and does not intercept OPTIONS.
+  if (!is.null(cors_origins)) {
+    pr <- plumber::pr_filter(pr, "cors", .cors_filter(cors_origins))
+  }
 
   # Inject standard STAC navigation links and optionally sign asset hrefs
   prepare_item <- function(item) {
