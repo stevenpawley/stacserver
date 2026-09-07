@@ -1,7 +1,8 @@
 #' Sign all asset hrefs in a STAC Item list.
 #'
 #' Signing failures emit a warning and leave the href unchanged rather than
-#' failing the whole request.
+#' failing the whole request. Warnings omit hrefs and signer error messages,
+#' which may contain credentials.
 #'
 #' @param item A STAC Item as a plain list (as returned from the database).
 #' @param sign_fn A function `function(href)` returning a signed href string.
@@ -14,8 +15,10 @@
       a$href <- tryCatch(
         sign_fn(a$href),
         error = function(e) {
+          # Both the href and the backend error can contain SAS tokens or
+          # other credentials. Keep this warning independent of either.
           cli::cli_warn(
-            "Asset signing failed for '{a$href}': {conditionMessage(e)}"
+            "Asset signing failed; the original href was retained."
           )
           a$href
         }

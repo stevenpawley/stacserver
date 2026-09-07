@@ -38,3 +38,27 @@ test_that(".sign_item_assets skips an asset with no href", {
   expect_null(signed$assets$dem$href)
   expect_equal(signed$assets$dem$title, "No href here")
 })
+
+test_that("signing failure warnings do not disclose URLs or backend credentials", {
+  href <- "https://user:password@acct.blob.core.windows.net/private/dem.tif?sig=secret-sas"
+  item <- list(assets = list(dem = list(href = href)))
+  warnings <- character()
+
+  signed <- withCallingHandlers(
+    .sign_item_assets(item, function(href) {
+      stop(paste("Request failed:", href, "Authorization: Bearer secret-token"))
+    }),
+    warning = function(w) {
+      warnings <<- c(warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  expect_length(warnings, 1L)
+  expect_match(warnings, "Asset signing failed")
+  for (sensitive in c(href, "password", "private/dem.tif", "secret-sas",
+                      "Authorization", "secret-token", "Request failed")) {
+    expect_false(grepl(sensitive, warnings, fixed = TRUE))
+  }
+  expect_identical(signed, item)
+})
