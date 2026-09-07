@@ -43,6 +43,9 @@ stac_api_router(
   [`azure_signer()`](https://stevenpawley.github.io/stacserver/reference/azure_signer.md)
   to sign Azure Blob Storage hrefs with a managed identity, or supply
   your own function for another backend. Default `NULL` (no signing).
+  When enabled, all router responses include
+  `Cache-Control: private, no-store` to prevent caching temporary asset
+  credentials.
 
 - cors_origins:
 

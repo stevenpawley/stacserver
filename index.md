@@ -43,6 +43,10 @@ and the router rewrites every asset href it returns into a short-lived
 signed URL. `sign_fn` is any `function(href)` returning a signed href,
 so a backend this package does not cover can be supplied directly.
 
+When signing is enabled, all API responses include
+`Cache-Control: private, no-store`, instructing browsers and shared
+caches not to store responses containing temporary asset credentials.
+
 Azure Blob Storage is covered out of the box by
 [`azure_signer()`](https://stevenpawley.github.io/stacserver/reference/azure_signer.md).
 Minting a user delegation key is a network round trip, and the router

@@ -115,6 +115,7 @@
 <h2 id="asset-signing">Asset signing<a class="anchor" aria-label="anchor" href="#asset-signing"></a>
 </h2>
 <p>When assets live in private object storage, pass a <code>sign_fn</code> to <code><a href="reference/stac_api_router.html">stac_api_router()</a></code> and the router rewrites every asset href it returns into a short-lived signed URL. <code>sign_fn</code> is any <code>function(href)</code> returning a signed href, so a backend this package does not cover can be supplied directly.</p>
+<p>When signing is enabled, all API responses include <code>Cache-Control: private, no-store</code>, instructing browsers and shared caches not to store responses containing temporary asset credentials.</p>
 <p>Azure Blob Storage is covered out of the box by <code><a href="reference/azure_signer.html">azure_signer()</a></code>. Minting a user delegation key is a network round trip, and the router signs every asset href in every response, so an items page holding ten items with four assets apiece would otherwise make forty calls to Azure before it could reply. <code><a href="reference/azure_signer.html">azure_signer()</a></code> fetches one key and reuses it, renewing only when the key gets close enough to expiry that it could no longer cover a new signature:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">router</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
