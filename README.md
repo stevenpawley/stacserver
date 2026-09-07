@@ -44,6 +44,10 @@ When assets live in private object storage, pass a `sign_fn` to
 short-lived signed URL. `sign_fn` is any `function(href)` returning a signed
 href, so a backend this package does not cover can be supplied directly.
 
+When signing is enabled, all API responses include
+`Cache-Control: private, no-store`, instructing browsers and shared caches not
+to store responses containing temporary asset credentials.
+
 Azure Blob Storage is covered out of the box by `azure_signer()`. Minting a
 user delegation key is a network round trip, and the router signs every asset
 href in every response, so an items page holding ten items with four assets

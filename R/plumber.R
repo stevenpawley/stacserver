@@ -100,7 +100,9 @@
 #'   every item response are signed before being returned. Pass
 #'   [azure_signer()] to sign Azure Blob Storage hrefs with a managed identity,
 #'   or supply your own function for another backend. Default `NULL`
-#'   (no signing).
+#'   (no signing). When enabled, all router responses include
+#'   `Cache-Control: private, no-store` to prevent caching temporary asset
+#'   credentials.
 #' @param cors_origins Origins permitted to read responses from browser
 #'   JavaScript, as a character vector of `scheme://host[:port]` values with no
 #'   path, e.g. `"https://browser.example.com"`. `"*"` allows every origin.
@@ -125,6 +127,14 @@ stac_api_router <- function(
   # response what .stac_to_json() preserves on the way in.
   pr <- plumber::pr() |>
     plumber::pr_set_serializer(.stac_serializer())
+
+  if (!is.null(sign_fn)) {
+    # Set this before routing, including error responses and signing failures.
+    pr <- plumber::pr_filter(pr, "signed_response_cache", function(req, res) {
+      res$setHeader("Cache-Control", "private, no-store")
+      plumber::forward()
+    })
+  }
 
   # CORS - answers the pre-flight OPTIONS request directly. Only needed by a
   # browser on another origin; a page served from the same origin as the API

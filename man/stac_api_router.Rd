@@ -27,7 +27,9 @@ href and returns a signed href string. When non-\code{NULL}, asset hrefs in
 every item response are signed before being returned. Pass
 \code{\link[=azure_signer]{azure_signer()}} to sign Azure Blob Storage hrefs with a managed identity,
 or supply your own function for another backend. Default \code{NULL}
-(no signing).}
+(no signing). When enabled, all router responses include
+\verb{Cache-Control: private, no-store} to prevent caching temporary asset
+credentials.}
 
 \item{cors_origins}{Origins permitted to read responses from browser
 JavaScript, as a character vector of \verb{scheme://host[:port]} values with no
