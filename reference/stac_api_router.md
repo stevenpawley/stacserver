@@ -10,7 +10,8 @@ stac_api_router(
   base_url = "http://localhost:8000",
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
-  sign_fn = NULL
+  sign_fn = NULL,
+  cors_origins = NULL
 )
 ```
 
@@ -42,6 +43,13 @@ stac_api_router(
   [`azure_signer()`](https://stevenpawley.github.io/stacserver/reference/azure_signer.md)
   to sign Azure Blob Storage hrefs with a managed identity, or supply
   your own function for another backend. Default `NULL` (no signing).
+
+- cors_origins:
+
+  Origins permitted to read responses from browser JavaScript, as a
+  character vector of `scheme://host[:port]` values with no path, e.g.
+  `"https://browser.example.com"`. `"*"` allows every origin. Default
+  `NULL` sends no CORS headers at all. See *Cross-origin requests*.
 
 ## Value
 
@@ -115,3 +123,31 @@ Connect itself:
 Setting that content to "Anyone - no login required", or running the
 router without an authenticating proxy in front of it, publishes the
 whole catalog to anyone who can reach the port.
+
+## Cross-origin requests
+
+`cors_origins` controls the `Access-Control-Allow-Origin` header, which
+decides whether JavaScript running on *another* website may read this
+API's responses. It is not access control: the request still reaches the
+server and is served either way, and non-browser clients — `rstac`,
+GDAL, QGIS, Python — ignore the header entirely. It only stops a page
+the user happens to be visiting from reading the catalog on their
+behalf.
+
+The default of `NULL` sends no CORS headers, which is right for an API
+consumed by those clients or by a browser app served from the same
+origin. Name an origin only for a browser app hosted elsewhere:
+
+    stac_api_router(con, cors_origins = "https://browser.example.com")
+
+An origin is a scheme, host and optional port with no path, because that
+is all a browser sends: a page at `https://example.com/browser` sends
+the origin `https://example.com`.
+
+This matters more when `sign_fn` is set, because responses then carry
+live signed asset URLs. `"*"` lets any site on the internet read those,
+which is only appropriate for a genuinely public catalog. Note also that
+a cross-origin browser app cannot authenticate to Posit Connect:
+preflight requests carry no credentials, so Connect rejects them before
+this router sees them. Serving the browser app from the same origin as
+the API avoids the problem entirely.

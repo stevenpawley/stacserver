@@ -47,7 +47,8 @@
 <span>  base_url <span class="op">=</span> <span class="st">"http://localhost:8000"</span>,</span>
 <span>  title <span class="op">=</span> <span class="st">"STAC API"</span>,</span>
 <span>  description <span class="op">=</span> <span class="st">"A minimal STAC API served by stacserver"</span>,</span>
-<span>  sign_fn <span class="op">=</span> <span class="cn">NULL</span></span>
+<span>  sign_fn <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  cors_origins <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -78,6 +79,13 @@ every item response are signed before being returned. Pass
 <code><a href="azure_signer.html">azure_signer()</a></code> to sign Azure Blob Storage hrefs with a managed identity,
 or supply your own function for another backend. Default <code>NULL</code>
 (no signing).</p></dd>
+
+
+<dt id="arg-cors-origins">cors_origins<a class="anchor" aria-label="anchor" href="#arg-cors-origins"></a></dt>
+<dd><p>Origins permitted to read responses from browser
+JavaScript, as a character vector of <code>scheme://host[:port]</code> values with no
+path, e.g. <code>"https://browser.example.com"</code>. <code>"*"</code> allows every origin.
+Default <code>NULL</code> sends no CORS headers at all. See <em>Cross-origin requests</em>.</p></dd>
 
 </dl></div>
     <div class="section level2">
@@ -125,6 +133,29 @@ itself:</p>
 <p>Setting that content to "Anyone - no login required", or running the router
 without an authenticating proxy in front of it, publishes the whole catalog
 to anyone who can reach the port.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="cross-origin-requests">Cross-origin requests<a class="anchor" aria-label="anchor" href="#cross-origin-requests"></a></h2>
+    <p><code>cors_origins</code> controls the <code>Access-Control-Allow-Origin</code> header, which
+decides whether JavaScript running on <em>another</em> website may read this API's
+responses. It is not access control: the request still reaches the server
+and is served either way, and non-browser clients — <code>rstac</code>, GDAL, QGIS,
+Python — ignore the header entirely. It only stops a page the user happens
+to be visiting from reading the catalog on their behalf.</p>
+<p>The default of <code>NULL</code> sends no CORS headers, which is right for an API
+consumed by those clients or by a browser app served from the same origin.
+Name an origin only for a browser app hosted elsewhere:</p>
+<p></p><div class="sourceCode r"><pre><code><span><span class="fu"><a href="../reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span><span class="va">con</span>, cors_origins <span class="op">=</span> <span class="st">"https://browser.example.com"</span><span class="op">)</span></span></code></pre><p></p></div>
+<p>An origin is a scheme, host and optional port with no path, because that is
+all a browser sends: a page at <code>https://example.com/browser</code> sends the
+origin <code>https://example.com</code>.</p>
+<p>This matters more when <code>sign_fn</code> is set, because responses then carry live
+signed asset URLs. <code>"*"</code> lets any site on the internet read those, which is
+only appropriate for a genuinely public catalog. Note also that a
+cross-origin browser app cannot authenticate to Posit Connect: preflight
+requests carry no credentials, so Connect rejects them before this router
+sees them. Serving the browser app from the same origin as the API avoids
+the problem entirely.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

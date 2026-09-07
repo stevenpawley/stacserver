@@ -270,12 +270,26 @@
 <div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
 <span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>     https://connect.example.com/content/<span class="op">&lt;</span>guid<span class="op">&gt;</span>/collections</span></code></pre></div>
 <p>Elsewhere, put the API behind a reverse proxy, API gateway, or similar that authenticates requests before they arrive.</p>
+<div class="section level3">
+<h3 id="cross-origin-requests">Cross-origin requests<a class="anchor" aria-label="anchor" href="#cross-origin-requests"></a>
+</h3>
+<p>By default the router sends no CORS headers. <code>Access-Control-Allow-Origin</code> decides whether JavaScript on <em>another</em> website may read this API’s responses; it is not access control, since the request is served either way and non-browser clients (<code>rstac</code>, GDAL, QGIS, Python) ignore the header entirely.</p>
+<p>Name an origin only when a browser app hosted elsewhere needs to read the API:</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">router</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
+<span>  <span class="va">con</span>,</span>
+<span>  base_url     <span class="op">=</span> <span class="st">"https://stac.example.com"</span>,</span>
+<span>  cors_origins <span class="op">=</span> <span class="st">"https://browser.example.com"</span>  <span class="co"># or "*" for a public catalog</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>An origin is a scheme, host and optional port with <strong>no path</strong> — a page at <code>https://example.com/browser</code> sends the origin <code>https://example.com</code>.</p>
+<p>This matters most when <code>sign_fn</code> is set, because responses then carry live signed asset URLs; <code>"*"</code> lets any site on the internet read them. Note too that a cross-origin browser app cannot authenticate to Posit Connect — preflight requests carry no credentials, so Connect rejects them before the router sees them. Serving the browser app from the same origin as the API sidesteps CORS altogether and is much less work.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="deploying-to-posit-connect">Deploying to Posit Connect<a class="anchor" aria-label="anchor" href="#deploying-to-posit-connect"></a>
 </h2>
 <p>The API can be deployed to <a href="https://posit.co/products/enterprise/connect/" class="external-link">Posit Connect</a> using the standard plumber deployment workflow. Create an entrypoint file (e.g. <code>plumber.R</code>) in your project:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># plumber.R</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/stevenpawley/stacserver" class="external-link">stacserver</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/stevenpawley/stacbuildr" class="external-link">stacbuildr</a></span><span class="op">)</span></span>
@@ -301,8 +315,8 @@
 <p>Then publish and set database credentials as environment variables in the Connect dashboard.</p>
 <p>In the content’s <strong>Access</strong> settings, set access to <strong>“All authenticated Posit Connect users”</strong> (or a specific group). This is what secures the API: Connect validates each caller’s key or session before the request reaches the plumber process. Leaving the content readable by anyone publishes the entire catalog.</p>
 <p>Callers authenticate using their personal Connect API key:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
-<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>     https://connect.example.com/stac/collections</span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>     https://connect.example.com/stac/collections</span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="dependencies">Dependencies<a class="anchor" aria-label="anchor" href="#dependencies"></a>
@@ -343,11 +357,11 @@
 <h2 id="testing">Testing<a class="anchor" aria-label="anchor" href="#testing"></a>
 </h2>
 <p>Most of the test suite runs without a database. The database-backed tests are skipped unless <code>STACSERVER_TEST_PG</code> points at a PostgreSQL/PostGIS database the tests may write to:</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> stac-test <span class="at">-p</span> 5432:5432 <span class="dt">\</span></span>
-<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>  <span class="at">-e</span> POSTGRES_PASSWORD=postgres <span class="at">-e</span> POSTGRES_DB=stac_test postgis/postgis:16-3.4</span>
-<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a></span>
-<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a><span class="va">STACSERVER_TEST_PG</span><span class="op">=</span>postgresql://postgres:postgres@localhost:5432/stac_test <span class="dt">\</span></span>
-<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  <span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test()'</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> stac-test <span class="at">-p</span> 5432:5432 <span class="dt">\</span></span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>  <span class="at">-e</span> POSTGRES_PASSWORD=postgres <span class="at">-e</span> POSTGRES_DB=stac_test postgis/postgis:16-3.4</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a><span class="va">STACSERVER_TEST_PG</span><span class="op">=</span>postgresql://postgres:postgres@localhost:5432/stac_test <span class="dt">\</span></span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>  <span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test()'</span></span></code></pre></div>
 <p>Everything those tests create is namespaced by a random collection id and removed afterwards.</p>
 </div>
 <div class="section level2">

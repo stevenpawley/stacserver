@@ -228,6 +228,36 @@ curl -H "Authorization: Key <connect-api-key>" \
 Elsewhere, put the API behind a reverse proxy, API gateway, or similar
 that authenticates requests before they arrive.
 
+### Cross-origin requests
+
+By default the router sends no CORS headers.
+`Access-Control-Allow-Origin` decides whether JavaScript on *another*
+website may read this API’s responses; it is not access control, since
+the request is served either way and non-browser clients (`rstac`, GDAL,
+QGIS, Python) ignore the header entirely.
+
+Name an origin only when a browser app hosted elsewhere needs to read
+the API:
+
+``` r
+
+router <- stac_api_router(
+  con,
+  base_url     = "https://stac.example.com",
+  cors_origins = "https://browser.example.com"  # or "*" for a public catalog
+)
+```
+
+An origin is a scheme, host and optional port with **no path** — a page
+at `https://example.com/browser` sends the origin `https://example.com`.
+
+This matters most when `sign_fn` is set, because responses then carry
+live signed asset URLs; `"*"` lets any site on the internet read them.
+Note too that a cross-origin browser app cannot authenticate to Posit
+Connect — preflight requests carry no credentials, so Connect rejects
+them before the router sees them. Serving the browser app from the same
+origin as the API sidesteps CORS altogether and is much less work.
+
 ## Deploying to Posit Connect
 
 The API can be deployed to [Posit
