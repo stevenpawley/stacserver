@@ -212,9 +212,27 @@ test_that("conformance declares only implemented classes", {
   expect_false(any(grepl("#fields", uris, fixed = TRUE)))
   expect_true(any(grepl("#query", uris, fixed = TRUE)))
   expect_true(any(grepl("/collections$", uris)))
-  # Versions match the stac_version stamped on served objects
-  expect_false(any(grepl("api.stacspec.org/v1.0.0", uris, fixed = TRUE)))
-  expect_true(all(grepl("v1.1.0", grep("api.stacspec.org", uris, value = TRUE), fixed = TRUE)))
+  # Every implemented STAC class is also advertised under its legacy
+  # v1.0.0 spelling so that clients matching conformance URIs by exact
+  # version (notably QGIS) recognise this API
+  legacy <- c(
+    "https://api.stacspec.org/v1.0.0/collections",
+    "https://api.stacspec.org/v1.0.0/item-search",
+    "https://api.stacspec.org/v1.0.0/ogcapi-features"
+  )
+  expect_true(all(legacy %in% uris))
+  # ... and only classes that are actually implemented carry a legacy URI
+  expect_setequal(
+    grep("/v1\\.0\\.0/", uris, value = TRUE),
+    legacy
+  )
+  # Everything else on api.stacspec.org matches the version stamped on the
+  # served objects
+  non_legacy <- setdiff(
+    grep("api.stacspec.org", uris, value = TRUE),
+    legacy
+  )
+  expect_true(all(grepl("v1.1.0", non_legacy, fixed = TRUE)))
 })
 
 test_that(".with_bad_request converts the condition into a 400 body", {

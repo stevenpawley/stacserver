@@ -33,12 +33,14 @@
 #' `/conformance` endpoint so that clients can discover which capabilities
 #' (core, item search, OGC Features, GeoJSON) are supported.
 #'
+#' Each implemented STAC class is also advertised under its legacy v1.0.0
+#' spelling: clients that match conformance URIs by exact version, notably
+#' QGIS, otherwise fail to recognise the API. The v1.1.0 spellings remain
+#' authoritative; a legacy URI appears only for a class this API implements.
+#'
 #' @return A character list of conformance class URI strings.
 #' @noRd
 .stac_conformance_uris <- function() {
-  # Only classes that are actually implemented belong here: a client trusts
-  # this list to decide what it may send. The versions match the STAC version
-  # stamped on the objects served (1.1.0).
   list(
     "https://api.stacspec.org/v1.1.0/core",
     "https://api.stacspec.org/v1.1.0/collections",
@@ -47,7 +49,10 @@
     "https://api.stacspec.org/v1.1.0/ogcapi-features",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
-    "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson"
+    "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
+    "https://api.stacspec.org/v1.0.0/collections",
+    "https://api.stacspec.org/v1.0.0/item-search",
+    "https://api.stacspec.org/v1.0.0/ogcapi-features"
   )
 }
 
