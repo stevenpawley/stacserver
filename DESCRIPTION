@@ -22,6 +22,7 @@ Imports:
     geojsonsf,
     jsonlite,
     plumber,
+    S7,
     sf,
     stacbuildr,
     stats,

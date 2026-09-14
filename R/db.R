@@ -164,7 +164,7 @@ stac_db_setup <- function(con) {
 #' @return `collection`, invisibly.
 #' @export
 stac_db_insert_collection <- function(con, collection) {
-  if (!inherits(collection, "stac_collection")) {
+  if (!S7::S7_inherits(collection, stac_collection)) {
     cli::cli_abort("'collection' must be a stac_collection object")
   }
 
@@ -210,7 +210,7 @@ stac_db_insert_collection <- function(con, collection) {
 #' @return `item`, invisibly.
 #' @export
 stac_db_insert_item <- function(con, item) {
-  if (!inherits(item, "stac_item")) {
+  if (!S7::S7_inherits(item, stac_item)) {
     cli::cli_abort("'item' must be a stac_item object")
   }
   if (is.null(item@collection) || nchar(item@collection) == 0) {

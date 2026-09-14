@@ -1,6 +1,31 @@
 # Database-backed tests. Skipped unless STACSERVER_TEST_PG is set; see
 # helper-db.R.
 
+test_that("database insertion accepts formal stacbuildr S7 classes", {
+  collection <- test_collection("qualified-classes")
+  item <- test_item(
+    "item-1",
+    collection@id,
+    -114,
+    51,
+    "2024-06-01T00:00:00Z"
+  )
+
+  inserted_collection <- testthat::with_mocked_bindings(
+    stac_db_insert_collection(NULL, collection),
+    dbExecute = function(...) 1L,
+    .package = "DBI"
+  )
+  inserted_item <- testthat::with_mocked_bindings(
+    stac_db_insert_item(NULL, item),
+    dbExecute = function(...) 1L,
+    .package = "DBI"
+  )
+
+  expect_identical(inserted_collection, collection)
+  expect_identical(inserted_item, item)
+})
+
 test_that("a collection round-trips through the database", {
   skip_if_no_pg()
   con <- test_con()
