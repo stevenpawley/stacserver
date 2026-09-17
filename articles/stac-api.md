@@ -190,7 +190,7 @@ re-insert. Both inserts upsert on `id`, so they are safe to re-run.
 
 stac_db_insert_collection(con, collection)
 
-item@collection <- "terrain"
+item$collection <- "terrain"
 stac_db_insert_item(con, item)
 ```
 

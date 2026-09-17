@@ -236,7 +236,7 @@ inserted wrong stays wrong until you re-insert. Both inserts upsert on
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/stac_db_insert_collection.html">stac_db_insert_collection</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">collection</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">item</span><span class="op">@</span><span class="va">collection</span> <span class="op">&lt;-</span> <span class="st">"terrain"</span></span>
+<span><span class="va">item</span><span class="op">$</span><span class="va">collection</span> <span class="op">&lt;-</span> <span class="st">"terrain"</span></span>
 <span><span class="fu"><a href="../reference/stac_db_insert_item.html">stac_db_insert_item</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">item</span><span class="op">)</span></span></code></pre></div>
 <p>Items with extension metadata are stored as-is in JSONB, so no schema
 changes are needed to support new STAC extensions.</p>
