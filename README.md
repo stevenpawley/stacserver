@@ -127,7 +127,7 @@ con <- pool::dbPool(
 stac_db_insert_collection(con, collection)
 
 # Items must reference their collection before ingestion
-item@collection <- "sentinel-2-l2a"
+item$collection <- "sentinel-2-l2a"
 stac_db_insert_item(con, item)
 
 # Items with extension metadata are stored as-is in JSONB —
@@ -136,7 +136,7 @@ item_with_extensions <- item |>
   add_eo_extension(bands = sentinel2_msi_bands(), cloud_cover = 4.1) |>
   add_scientific_extension(doi = "10.1000/xyz123")
 
-item_with_extensions@collection <- "sentinel-2-l2a"
+item_with_extensions$collection <- "sentinel-2-l2a"
 stac_db_insert_item(con, item_with_extensions)
 ```
 

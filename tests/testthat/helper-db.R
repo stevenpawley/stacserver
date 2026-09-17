@@ -96,6 +96,6 @@ test_item <- function(id, collection_id, lon, lat, datetime, assets = list()) {
     datetime = datetime,
     assets = assets
   )
-  item@collection <- collection_id
+  item$collection <- collection_id
   item
 }

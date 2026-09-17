@@ -164,16 +164,16 @@ stac_db_setup <- function(con) {
 #' @return `collection`, invisibly.
 #' @export
 stac_db_insert_collection <- function(con, collection) {
-  if (!S7::S7_inherits(collection, stac_collection)) {
+  if (!inherits(collection, "stac_collection")) {
     cli::cli_abort("'collection' must be a stac_collection object")
   }
 
   content_json <- .stac_to_json(collection)
 
-  bbox <- collection@extent@spatial@bbox[[1]]
+  bbox <- collection$extent$spatial$bbox[[1]]
   geom_wkt <- .bbox_to_wkt(bbox)
 
-  interval <- collection@extent@temporal@interval[[1]]
+  interval <- collection$extent$temporal$interval[[1]]
   dt_start <- interval[[1]]
   dt_end <- interval[[2]]
 
@@ -192,7 +192,7 @@ stac_db_insert_collection <- function(con, collection) {
       updated_at     = NOW()
   ",
     params = list(
-      collection@id,
+      collection$id,
       content_json,
       geom_wkt,
       dt_start %||% NA_character_,
@@ -206,29 +206,33 @@ stac_db_insert_collection <- function(con, collection) {
 #' Insert or update a STAC Item in the database
 #'
 #' @param con A DBI connection.
-#' @param item A [stacbuildr::stac_item()] object. Must have `item@collection` set.
+#' @param item A [stacbuildr::stac_item()] object. Must have `item$collection` set.
 #' @return `item`, invisibly.
 #' @export
 stac_db_insert_item <- function(con, item) {
-  if (!S7::S7_inherits(item, stac_item)) {
+  if (!inherits(item, "stac_item")) {
     cli::cli_abort("'item' must be a stac_item object")
   }
-  if (is.null(item@collection) || nchar(item@collection) == 0) {
-    cli::cli_abort("item@collection must be set before inserting")
+  if (is.null(item$collection) || nchar(item$collection) == 0) {
+    cli::cli_abort("item$collection must be set before inserting")
   }
 
   content_json <- .stac_to_json(item)
 
-  geom_wkt <- if (!is.null(item@geometry)) {
+  geom_wkt <- if (!is.null(item$geometry)) {
     tryCatch(
       sf::st_as_text(geojsonsf::geojson_sfc(
-        jsonlite::toJSON(item@geometry, auto_unbox = TRUE, digits = NA)
+        jsonlite::toJSON(
+          as.list(item$geometry),
+          auto_unbox = TRUE,
+          digits = NA
+        )
       )),
       error = function(e) {
         # An item stored without a geometry can never match a spatial search,
         # so the failure must not pass silently.
         cli::cli_warn(c(
-          "Could not convert the geometry of item {.val {item@id}}; it will be
+          "Could not convert the geometry of item {.val {item$id}}; it will be
            stored without one and will not match spatial searches.",
           x = conditionMessage(e)
         ))
@@ -239,7 +243,7 @@ stac_db_insert_item <- function(con, item) {
     NA_character_
   }
 
-  props <- item@properties
+  props <- item$properties
   datetime <- props$datetime %||% NA_character_
   start_dt <- props$start_datetime %||% NA_character_
   end_dt <- props$end_datetime %||% NA_character_
@@ -262,8 +266,8 @@ stac_db_insert_item <- function(con, item) {
       updated_at     = NOW()
   ",
     params = list(
-      item@id,
-      item@collection,
+      item$id,
+      item$collection,
       content_json,
       geom_wkt,
       datetime,

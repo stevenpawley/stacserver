@@ -9,7 +9,7 @@ stac_db_insert_item(con, item)
 \arguments{
 \item{con}{A DBI connection.}
 
-\item{item}{A \code{\link[stacbuildr:stac_item]{stacbuildr::stac_item()}} object. Must have \code{item@collection} set.}
+\item{item}{A \code{\link[stacbuildr:stac_item]{stacbuildr::stac_item()}} object. Must have \code{item$collection} set.}
 }
 \value{
 \code{item}, invisibly.
