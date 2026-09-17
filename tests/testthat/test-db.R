@@ -22,7 +22,7 @@ test_that("inserting a collection twice updates rather than duplicating", {
 
   stac_db_insert_collection(con, test_collection(cid))
   col <- test_collection(cid)
-  col@description <- "Changed"
+  col$description <- "Changed"
   stac_db_insert_collection(con, col)
 
   expect_equal(.db_get_collection(con, cid)$description, "Changed")
@@ -223,7 +223,7 @@ test_that("query filters run against real JSONB properties", {
     datetime = "2024-06-01T00:00:00Z",
     properties = list("eo:cloud_cover" = 2.5, platform = "sentinel-2a")
   )
-  clear@collection <- cid
+  clear$collection <- cid
   cloudy <- stacbuildr::stac_item(
     id = "cloudy",
     geometry = list(type = "Point", coordinates = c(-114, 51)),
@@ -231,7 +231,7 @@ test_that("query filters run against real JSONB properties", {
     datetime = "2024-06-02T00:00:00Z",
     properties = list("eo:cloud_cover" = 80, platform = "sentinel-2b")
   )
-  cloudy@collection <- cid
+  cloudy$collection <- cid
   stac_db_insert_item(con, clear)
   stac_db_insert_item(con, cloudy)
 
@@ -267,7 +267,7 @@ test_that("a numeric comparison tolerates a property of mixed type", {
     datetime = "2024-06-01T00:00:00Z",
     properties = list(gsd = 10)
   )
-  numeric_item@collection <- cid
+  numeric_item$collection <- cid
   string_item <- stacbuildr::stac_item(
     id = "string",
     geometry = list(type = "Point", coordinates = c(-114, 51)),
@@ -275,7 +275,7 @@ test_that("a numeric comparison tolerates a property of mixed type", {
     datetime = "2024-06-02T00:00:00Z",
     properties = list(gsd = "unknown")
   )
-  string_item@collection <- cid
+  string_item$collection <- cid
   stac_db_insert_item(con, numeric_item)
   stac_db_insert_item(con, string_item)
 
