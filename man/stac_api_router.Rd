@@ -49,6 +49,7 @@ Returns a \code{plumber} router pre-wired with the following endpoints:
    GET \tab \verb{/collections/\{collectionId\}} \tab Single collection \cr
    GET \tab \verb{/collections/\{collectionId\}/items} \tab Items in a collection \cr
    GET \tab \verb{/collections/\{collectionId\}/items/\{itemId\}} \tab Single item \cr
+   GET \tab \verb{/stac/assets/\{collectionId\}/\{itemId\}/\{assetKey\}} \tab Redirect to a signed asset (when \code{asset_proxy = TRUE}) \cr
    GET \tab \verb{/search} \tab Search items (GET form) \cr
    POST \tab \verb{/search} \tab Search items (POST / JSON body) \cr
 }
@@ -112,3 +113,4 @@ Setting that content to "Anyone - no login required", or running the router
 without an authenticating proxy in front of it, publishes the whole catalog
 to anyone who can reach the port.
 }
+
