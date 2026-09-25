@@ -9,7 +9,8 @@ stac_api_router(
   base_url = "http://localhost:8000",
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
-  sign_fn = NULL
+  sign_fn = NULL,
+  asset_proxy = FALSE
 )
 }
 \arguments{
@@ -27,6 +28,11 @@ every item response are signed before being returned. Pass
 \code{\link[=azure_signer]{azure_signer()}} to sign Azure Blob Storage hrefs with a managed identity,
 or supply your own function for another backend. Default \code{NULL}
 (no signing).}
+
+\item{asset_proxy}{If \code{TRUE}, item responses use stable URLs on this API
+(\verb{/stac/assets/\{collectionId\}/\{itemId\}/\{assetKey\}}), and requests to those
+URLs redirect to a freshly signed href using \code{sign_fn}. This keeps expiring
+storage credentials out of saved STAC projects. Requires \code{sign_fn}.}
 }
 \value{
 A \code{plumber} router object.
@@ -106,4 +112,3 @@ Setting that content to "Anyone - no login required", or running the router
 without an authenticating proxy in front of it, publishes the whole catalog
 to anyone who can reach the port.
 }
-

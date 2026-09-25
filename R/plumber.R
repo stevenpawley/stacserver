@@ -14,6 +14,7 @@
 #' | GET | `/collections/{collectionId}` | Single collection |
 #' | GET | `/collections/{collectionId}/items` | Items in a collection |
 #' | GET | `/collections/{collectionId}/items/{itemId}` | Single item |
+#' | GET | `/stac/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset (when `asset_proxy = TRUE`) |
 #' | GET | `/search` | Search items (GET form) |
 #' | POST | `/search` | Search items (POST / JSON body) |
 #'
@@ -85,6 +86,10 @@
 #'   [azure_signer()] to sign Azure Blob Storage hrefs with a managed identity,
 #'   or supply your own function for another backend. Default `NULL`
 #'   (no signing).
+#' @param asset_proxy If `TRUE`, item responses use stable URLs on this API
+#'   (`/stac/assets/{collectionId}/{itemId}/{assetKey}`), and requests to those
+#'   URLs redirect to a freshly signed href using `sign_fn`. This keeps expiring
+#'   storage credentials out of saved STAC projects. Requires `sign_fn`.
 #' @return A `plumber` router object.
 #' @export
 stac_api_router <- function(
@@ -92,8 +97,15 @@ stac_api_router <- function(
   base_url = "http://localhost:8000",
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
-  sign_fn = NULL
+  sign_fn = NULL,
+  asset_proxy = FALSE
 ) {
+  if (!is.logical(asset_proxy) || length(asset_proxy) != 1L || is.na(asset_proxy)) {
+    cli::cli_abort("`asset_proxy` must be TRUE or FALSE.")
+  }
+  if (asset_proxy && is.null(sign_fn)) {
+    cli::cli_abort("`asset_proxy = TRUE` requires a `sign_fn`.")
+  }
   # Custom serializer (how results are returned back to the client)
   # JSON is default but for STAC API compliance we are altering the
   # defaults to unwrap single element R vectors and provide explicit
@@ -123,7 +135,20 @@ stac_api_router <- function(
   # Inject standard STAC navigation links and optionally sign asset hrefs
   prepare_item <- function(item) {
     item <- .inject_item_links(item, base_url)
-    if (!is.null(sign_fn)) {
+    if (asset_proxy) {
+      cid <- utils::URLencode(item$collection, reserved = TRUE)
+      iid <- utils::URLencode(item$id, reserved = TRUE)
+      item$assets <- lapply(names(item$assets), function(key) {
+        asset <- item$assets[[key]]
+        if (!is.null(asset$href)) {
+          asset$href <- paste0(
+            base_url, "/stac/assets/", cid, "/", iid, "/",
+            utils::URLencode(key, reserved = TRUE)
+          )
+        }
+        asset
+      }) |> stats::setNames(names(item$assets))
+    } else if (!is.null(sign_fn)) {
       item <- .sign_item_assets(item, sign_fn)
     }
     item
@@ -163,6 +188,33 @@ stac_api_router <- function(
       links = .landing_links(base_url)
     )
   })
+
+  # Resolve an asset only when it is actually requested, mint its short-lived
+  # signed URL, and let the client fetch the bytes directly from object storage.
+  if (asset_proxy) {
+    pr <- plumber::pr_get(
+      pr,
+      "/stac/assets/<collectionId>/<itemId>/<assetKey>",
+      function(req, res, collectionId, itemId, assetKey) {
+        item <- .db_get_item(con, collectionId, itemId)
+        asset <- if (is.null(item)) NULL else item$assets[[assetKey]]
+        if (is.null(asset) || is.null(asset$href)) {
+          return(.not_found(res, "Asset not found"))
+        }
+        target <- tryCatch(sign_fn(asset$href), error = function(e) {
+          cli::cli_warn("Asset signing failed for '{asset$href}': {conditionMessage(e)}")
+          NULL
+        })
+        if (is.null(target) || length(target) != 1L || !is.character(target) || !nzchar(target)) {
+          res$status <- 502L
+          return(list(code = "asset_signing_failed", description = "Could not sign asset URL"))
+        }
+        res$status <- 302L
+        res$setHeader("Location", target)
+        ""
+      }
+    )
+  }
 
   # GET /conformance
   pr <- plumber::pr_get(pr, "/conformance", function(req, res) {
