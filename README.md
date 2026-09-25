@@ -35,6 +35,7 @@ remotes::install_github("stevenpawley/stacserver")
 | `/collections/{id}` | A single collection |
 | `/collections/{id}/items` | Items in a collection (`bbox`, `datetime`, `limit`) |
 | `/collections/{id}/items/{itemId}` | A single item |
+| `/stac/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset when `asset_proxy = TRUE` |
 | `/search` | Item search, `GET` and `POST` |
 
 ## Asset signing
@@ -69,6 +70,27 @@ request time, so a missing endpoint fails at startup.
 To sign a single href, call the signer directly: `azure_signer()(href)`.
 `azure_signer()` needs `AzureStor` and `AzureAuth`, which are Suggests rather
 than hard dependencies.
+
+For clients such as QGIS that save asset URLs in project files, enable the
+redirect proxy. The saved href then points at the API and stays stable; each
+asset request is authenticated by the fronting service (for example, Posit
+Connect), signs the stored blob href on demand, and returns an HTTP redirect so
+the client downloads bytes directly from Azure:
+
+```r
+router <- stac_api_router(
+  con,
+  base_url = "https://stac.example.com",
+  sign_fn = azure_signer(expiry_seconds = 3600),
+  asset_proxy = TRUE
+)
+```
+
+The redirect endpoint is `/stac/assets/{collectionId}/{itemId}/{assetKey}`.
+The Connect content must require authentication, and the client must be able
+to send its Connect credentials on asset requests; configure those credentials
+in QGIS as needed. This mode requires `sign_fn` and signs only when the asset
+URL is requested.
 
 stacserver serves a live [STAC API](https://github.com/radiantearth/stac-api-spec)
 backed by a PostgreSQL database (with PostGIS). The API follows the OGC API –

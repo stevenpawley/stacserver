@@ -10,7 +10,8 @@ stac_api_router(
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
   sign_fn = NULL,
-  cors_origins = NULL
+  cors_origins = NULL,
+  asset_proxy = FALSE
 )
 }
 \arguments{
@@ -35,6 +36,11 @@ credentials.}
 JavaScript, as a character vector of \verb{scheme://host[:port]} values with no
 path, e.g. \code{"https://browser.example.com"}. \code{"*"} allows every origin.
 Default \code{NULL} sends no CORS headers at all. See \emph{Cross-origin requests}.}
+
+\item{asset_proxy}{If \code{TRUE}, item responses use stable URLs on this API
+(\verb{/stac/assets/\{collectionId\}/\{itemId\}/\{assetKey\}}), and requests to those
+URLs redirect to a freshly signed href using \code{sign_fn}. This keeps expiring
+storage credentials out of saved STAC projects. Requires \code{sign_fn}.}
 }
 \value{
 A \code{plumber} router object.
@@ -51,6 +57,7 @@ Returns a \code{plumber} router pre-wired with the following endpoints:
    GET \tab \verb{/collections/\{collectionId\}} \tab Single collection \cr
    GET \tab \verb{/collections/\{collectionId\}/items} \tab Items in a collection \cr
    GET \tab \verb{/collections/\{collectionId\}/items/\{itemId\}} \tab Single item \cr
+   GET \tab \verb{/stac/assets/\{collectionId\}/\{itemId\}/\{assetKey\}} \tab Redirect to a signed asset (when \code{asset_proxy = TRUE}) \cr
    GET \tab \verb{/search} \tab Search items (GET form) \cr
    POST \tab \verb{/search} \tab Search items (POST / JSON body) \cr
 }
@@ -101,7 +108,6 @@ Setting that content to "Anyone - no login required", or running the router
 without an authenticating proxy in front of it, publishes the whole catalog
 to anyone who can reach the port.
 }
-
 \section{Cross-origin requests}{
 \code{cors_origins} controls the \code{Access-Control-Allow-Origin} header, which
 decides whether JavaScript running on \emph{another} website may read this API's
@@ -129,4 +135,3 @@ requests carry no credentials, so Connect rejects them before this router
 sees them. Serving the browser app from the same origin as the API avoids
 the problem entirely.
 }
-
