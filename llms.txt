@@ -33,7 +33,6 @@ remotes::install_github("stevenpawley/stacserver")
 | `/collections/{id}` | A single collection |
 | `/collections/{id}/items` | Items in a collection (`bbox`, `datetime`, `limit`) |
 | `/collections/{id}/items/{itemId}` | A single item |
-| `{base_url}/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset when `asset_proxy = TRUE` |
 | `/search` | Item search, `GET` and `POST` |
 
 ## Asset signing
@@ -74,32 +73,6 @@ To sign a single href, call the signer directly: `azure_signer()(href)`.
 [`azure_signer()`](https://stevenpawley.github.io/stacserver/reference/azure_signer.md)
 needs `AzureStor` and `AzureAuth`, which are Suggests rather than hard
 dependencies.
-
-For clients such as QGIS that save asset URLs in project files, enable
-the redirect proxy. The saved href then points at the API and stays
-stable; each asset request is authenticated by the fronting service (for
-example, Posit Connect), signs the stored blob href on demand, and
-returns an HTTP redirect so the client downloads bytes directly from
-Azure:
-
-``` r
-
-router <- stac_api_router(
-  con,
-  base_url = "https://stac.example.com",
-  sign_fn = azure_signer(expiry_seconds = 3600),
-  asset_proxy = TRUE
-)
-```
-
-The router endpoint is `/assets/{collectionId}/{itemId}/{assetKey}`
-relative to the deployment root. With a Connect content path of `/stac`
-and `base_url = "https://posit.aer.ca/stac"`, the stable href is
-`https://posit.aer.ca/stac/assets/{collectionId}/{itemId}/{assetKey}`.
-The Connect content must require authentication, and the client must be
-able to send its Connect credentials on asset requests; configure those
-credentials in QGIS as needed. This mode requires `sign_fn` and signs
-only when the asset URL is requested.
 
 stacserver serves a live [STAC
 API](https://github.com/radiantearth/stac-api-spec) backed by a
