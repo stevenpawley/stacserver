@@ -11,7 +11,8 @@ stac_api_router(
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
   sign_fn = NULL,
-  cors_origins = NULL
+  cors_origins = NULL,
+  asset_proxy = FALSE
 )
 ```
 
@@ -54,6 +55,14 @@ stac_api_router(
   `"https://browser.example.com"`. `"*"` allows every origin. Default
   `NULL` sends no CORS headers at all. See *Cross-origin requests*.
 
+- asset_proxy:
+
+  If `TRUE`, item responses use stable URLs on this API
+  (`/stac/assets/{collectionId}/{itemId}/{assetKey}`), and requests to
+  those URLs redirect to a freshly signed href using `sign_fn`. This
+  keeps expiring storage credentials out of saved STAC projects.
+  Requires `sign_fn`.
+
 ## Value
 
 A `plumber` router object.
@@ -69,6 +78,7 @@ A `plumber` router object.
 | GET | `/collections/{collectionId}` | Single collection |
 | GET | `/collections/{collectionId}/items` | Items in a collection |
 | GET | `/collections/{collectionId}/items/{itemId}` | Single item |
+| GET | `/stac/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset (when `asset_proxy = TRUE`) |
 | GET | `/search` | Search items (GET form) |
 | POST | `/search` | Search items (POST / JSON body) |
 
