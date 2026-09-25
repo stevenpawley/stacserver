@@ -1,6 +1,6 @@
 Package: stacserver
 Title: Serve SpatioTemporal Asset Catalogs over a STAC API
-Version: 0.0.0.9000
+Version: 0.0.1
 Authors@R: 
     person("Steven", "Pawley", , "dr.stevenpawley@gmail.com", role = c("aut", "cre"))
 Description: Serves STAC (SpatioTemporal Asset Catalog) metadata as a STAC API
