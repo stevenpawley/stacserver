@@ -33,7 +33,7 @@ remotes::install_github("stevenpawley/stacserver")
 | `/collections/{id}` | A single collection |
 | `/collections/{id}/items` | Items in a collection (`bbox`, `datetime`, `limit`) |
 | `/collections/{id}/items/{itemId}` | A single item |
-| `/stac/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset when `asset_proxy = TRUE` |
+| `{base_url}/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset when `asset_proxy = TRUE` |
 | `/search` | Item search, `GET` and `POST` |
 
 ## Asset signing
@@ -92,12 +92,14 @@ router <- stac_api_router(
 )
 ```
 
-The redirect endpoint is
-`/stac/assets/{collectionId}/{itemId}/{assetKey}`. The Connect content
-must require authentication, and the client must be able to send its
-Connect credentials on asset requests; configure those credentials in
-QGIS as needed. This mode requires `sign_fn` and signs only when the
-asset URL is requested.
+The router endpoint is `/assets/{collectionId}/{itemId}/{assetKey}`
+relative to the deployment root. With a Connect content path of `/stac`
+and `base_url = "https://posit.aer.ca/stac"`, the stable href is
+`https://posit.aer.ca/stac/assets/{collectionId}/{itemId}/{assetKey}`.
+The Connect content must require authentication, and the client must be
+able to send its Connect credentials on asset requests; configure those
+credentials in QGIS as needed. This mode requires `sign_fn` and signs
+only when the asset URL is requested.
 
 stacserver serves a live [STAC
 API](https://github.com/radiantearth/stac-api-spec) backed by a

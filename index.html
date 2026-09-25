@@ -104,7 +104,7 @@
 <td>A single item</td>
 </tr>
 <tr>
-<td><code>/stac/assets/{collectionId}/{itemId}/{assetKey}</code></td>
+<td><code>{base_url}/assets/{collectionId}/{itemId}/{assetKey}</code></td>
 <td>Redirect to a signed asset when <code>asset_proxy = TRUE</code>
 </td>
 </tr>
@@ -138,7 +138,7 @@
 <span>  sign_fn <span class="op">=</span> <span class="fu"><a href="reference/azure_signer.html">azure_signer</a></span><span class="op">(</span>expiry_seconds <span class="op">=</span> <span class="fl">3600</span><span class="op">)</span>,</span>
 <span>  asset_proxy <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-<p>The redirect endpoint is <code>/stac/assets/{collectionId}/{itemId}/{assetKey}</code>. The Connect content must require authentication, and the client must be able to send its Connect credentials on asset requests; configure those credentials in QGIS as needed. This mode requires <code>sign_fn</code> and signs only when the asset URL is requested.</p>
+<p>The router endpoint is <code>/assets/{collectionId}/{itemId}/{assetKey}</code> relative to the deployment root. With a Connect content path of <code>/stac</code> and <code>base_url = "https://posit.aer.ca/stac"</code>, the stable href is <code>https://posit.aer.ca/stac/assets/{collectionId}/{itemId}/{assetKey}</code>. The Connect content must require authentication, and the client must be able to send its Connect credentials on asset requests; configure those credentials in QGIS as needed. This mode requires <code>sign_fn</code> and signs only when the asset URL is requested.</p>
 <p>stacserver serves a live <a href="https://github.com/radiantearth/stac-api-spec" class="external-link">STAC API</a> backed by a PostgreSQL database (with PostGIS). The API follows the OGC API – Features and STAC API 1.0 specifications.</p>
 </div>
 <div class="section level2">

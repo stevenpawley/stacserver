@@ -58,8 +58,8 @@ stac_api_router(
 - asset_proxy:
 
   If `TRUE`, item responses use stable URLs on this API
-  (`/stac/assets/{collectionId}/{itemId}/{assetKey}`), and requests to
-  those URLs redirect to a freshly signed href using `sign_fn`. This
+  (`{base_url}/assets/{collectionId}/{itemId}/{assetKey}`), and requests
+  to those URLs redirect to a freshly signed href using `sign_fn`. This
   keeps expiring storage credentials out of saved STAC projects.
   Requires `sign_fn`.
 
@@ -78,7 +78,7 @@ A `plumber` router object.
 | GET | `/collections/{collectionId}` | Single collection |
 | GET | `/collections/{collectionId}/items` | Items in a collection |
 | GET | `/collections/{collectionId}/items/{itemId}` | Single item |
-| GET | `/stac/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset (when `asset_proxy = TRUE`) |
+| GET | `/assets/{collectionId}/{itemId}/{assetKey}` | Redirect to a signed asset (when `asset_proxy = TRUE`) |
 | GET | `/search` | Search items (GET form) |
 | POST | `/search` | Search items (POST / JSON body) |
 
