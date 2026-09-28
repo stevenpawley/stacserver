@@ -210,11 +210,14 @@ test_that("conformance declares only implemented classes", {
   uris <- unlist(.stac_conformance_uris())
   # The fields extension is not implemented, so it must not be advertised
   expect_false(any(grepl("#fields", uris, fixed = TRUE)))
-  expect_true(any(grepl("#query", uris, fixed = TRUE)))
+  # The Query extension is intentionally outside this lightweight API's scope
+  expect_false(any(grepl("#query", uris, fixed = TRUE)))
   expect_true(any(grepl("/collections$", uris)))
-  # Versions match the stac_version stamped on served objects
-  expect_false(any(grepl("api.stacspec.org/v1.0.0", uris, fixed = TRUE)))
-  expect_true(all(grepl("v1.1.0", grep("api.stacspec.org", uris, value = TRUE), fixed = TRUE)))
+  # STAC API conformance URI versions are independent of the STAC object
+  # version (1.1.0) stamped on served objects.
+  stac_api_uris <- grep("api.stacspec.org", uris, value = TRUE)
+  expect_true(all(grepl("v1.0.0", stac_api_uris, fixed = TRUE)))
+  expect_false(any(grepl("v1.1.0", stac_api_uris, fixed = TRUE)))
 })
 
 test_that(".with_bad_request converts the condition into a 400 body", {

@@ -39,15 +39,15 @@
 #' @return A character list of conformance class URI strings.
 #' @noRd
 .stac_conformance_uris <- function() {
-  # Only classes that are actually implemented belong here: a client trusts
-  # this list to decide what it may send. The versions match the STAC version
-  # stamped on the objects served (1.1.0).
+  # These URIs identify STAC API conformance classes (API version 1.0.0),
+  # independently of the STAC object version (1.1.0) stamped on responses.
+  # Only advertise classes that are actually implemented: clients use this
+  # list to decide which capabilities they may rely on.
   list(
-    "https://api.stacspec.org/v1.1.0/core",
-    "https://api.stacspec.org/v1.1.0/collections",
-    "https://api.stacspec.org/v1.1.0/item-search",
-    "https://api.stacspec.org/v1.1.0/item-search#query",
-    "https://api.stacspec.org/v1.1.0/ogcapi-features",
+    "https://api.stacspec.org/v1.0.0/core",
+    "https://api.stacspec.org/v1.0.0/collections",
+    "https://api.stacspec.org/v1.0.0/item-search",
+    "https://api.stacspec.org/v1.0.0/ogcapi-features",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/core",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/oas30",
     "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson"
