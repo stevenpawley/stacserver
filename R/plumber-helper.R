@@ -40,7 +40,7 @@
 #' @noRd
 .stac_conformance_uris <- function() {
   # These URIs identify STAC API conformance classes (API version 1.0.0),
-  # independently of the STAC object version (1.1.0) stamped on responses.
+  # independently of the STAC object version (1.0.0) stamped on responses.
   # Only advertise classes that are actually implemented: clients use this
   # list to decide which capabilities they may rely on.
   list(

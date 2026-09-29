@@ -180,7 +180,7 @@ stac_api_router <- function(
   pr <- plumber::pr_get(pr, "/", function(req, res) {
     list(
       type = "Catalog",
-      stac_version = "1.1.0",
+      stac_version = "1.0.0",
       id = "stac-api",
       title = title,
       description = description,

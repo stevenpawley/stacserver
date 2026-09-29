@@ -214,7 +214,7 @@ test_that("conformance declares only implemented classes", {
   expect_false(any(grepl("#query", uris, fixed = TRUE)))
   expect_true(any(grepl("/collections$", uris)))
   # STAC API conformance URI versions are independent of the STAC object
-  # version (1.1.0) stamped on served objects.
+  # version (1.0.0) stamped on served objects.
   stac_api_uris <- grep("api.stacspec.org", uris, value = TRUE)
   expect_true(all(grepl("v1.0.0", stac_api_uris, fixed = TRUE)))
   expect_false(any(grepl("v1.1.0", stac_api_uris, fixed = TRUE)))
