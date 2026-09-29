@@ -70,6 +70,26 @@ To sign a single href, call the signer directly: `azure_signer()(href)`.
 `azure_signer()` needs `AzureStor` and `AzureAuth`, which are Suggests rather
 than hard dependencies.
 
+### Proxying thumbnails for ArcGIS Pro
+
+Some clients do not fetch thumbnail URLs containing storage-provider query
+credentials. Set `proxy_thumbnails = TRUE` to make assets named `thumbnail` or
+`thumb`, or assets with the STAC `thumbnail` role, point at the API instead:
+
+```r
+router <- stac_api_router(
+  con,
+  base_url = "https://connect.example.com/content/<guid>",
+  sign_fn = azure_signer(expiry_seconds = 3600),
+  proxy_thumbnails = TRUE
+)
+```
+
+The `/thumbnails/{collectionId}/{itemId}/{assetKey}` endpoint looks up the
+original href, signs it inside the plumber process, and returns the image bytes
+with the upstream content type. Posit Connect permissions therefore protect
+the thumbnail request too, while ArcGIS Pro sees an ordinary HTTPS URL.
+
 stacserver serves a live [STAC API](https://github.com/radiantearth/stac-api-spec)
 backed by a PostgreSQL database (with PostGIS). The API follows the OGC API –
 Features and STAC API 1.0 specifications.
@@ -169,6 +189,7 @@ The router exposes these endpoints:
 | GET | `/collections/{collectionId}/items/{itemId}` | Single item |
 | GET | `/search` | Cross-collection search |
 | POST | `/search` | Search with JSON body |
+| GET | `/thumbnails/{collectionId}/{itemId}/{assetKey}` | Serve a thumbnail |
 
 **Search parameters:** `bbox`, `datetime`, `collections`, `ids`, `limit`, `offset`.
 

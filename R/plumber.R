@@ -16,6 +16,7 @@
 #' | GET | `/collections/{collectionId}/items/{itemId}` | Single item |
 #' | GET | `/search` | Search items (GET form) |
 #' | POST | `/search` | Search items (POST / JSON body) |
+#' | GET | `/thumbnails/{collectionId}/{itemId}/{assetKey}` | Serve a thumbnail |
 #'
 #' **Search parameters** (GET query string or POST JSON body):
 #' * `bbox` - comma-separated `west,south,east,north` (GET) or array (POST);
@@ -103,6 +104,10 @@
 #'   (no signing). When enabled, all router responses include
 #'   `Cache-Control: private, no-store` to prevent caching temporary asset
 #'   credentials.
+#' @param proxy_thumbnails If `TRUE`, assets named `thumbnail` or `thumb`, or
+#'   carrying the STAC `thumbnail` role, use an API-local URL and are fetched
+#'   through the `/thumbnails/...` endpoint. This is useful for clients that do
+#'   not support signed storage URLs. Default `FALSE`.
 #' @param cors_origins Origins permitted to read responses from browser
 #'   JavaScript, as a character vector of `scheme://host[:port]` values with no
 #'   path, e.g. `"https://browser.example.com"`. `"*"` allows every origin.
@@ -115,7 +120,8 @@ stac_api_router <- function(
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
   sign_fn = NULL,
-  cors_origins = NULL
+  cors_origins = NULL,
+  proxy_thumbnails = FALSE
 ) {
   cors_origins <- .check_cors_origins(cors_origins)
 
@@ -150,6 +156,11 @@ stac_api_router <- function(
     item <- .inject_item_links(item, base_url)
     if (!is.null(sign_fn)) {
       item <- .sign_item_assets(item, sign_fn)
+    }
+    # Do this after signing so the public response never exposes a signed
+    # thumbnail URL; the endpoint signs the database href when it is fetched.
+    if (isTRUE(proxy_thumbnails)) {
+      item <- .proxy_thumbnail_assets(item, base_url)
     }
     item
   }
@@ -430,6 +441,20 @@ stac_api_router <- function(
       })
     },
     parsers = "json"
+  )
+
+  # Serve thumbnail bytes after resolving and signing the original asset URL.
+  # The route is deliberately limited to assets marked as thumbnails rather
+  # than becoming a general-purpose URL proxy.
+  pr <- plumber::pr_get(
+    pr,
+    "/thumbnails/<collectionId>/<itemId>/<assetKey>",
+    function(req, res, collectionId, itemId, assetKey) {
+      .serve_thumbnail(con, res, collectionId, itemId, assetKey, sign_fn)
+    },
+    serializer = plumber::serializer_content_type(
+      type = "application/octet-stream"
+    )
   )
 
   pr

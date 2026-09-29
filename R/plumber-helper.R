@@ -29,6 +29,93 @@
   item
 }
 
+#' Replace thumbnail asset hrefs with API-local proxy URLs.
+#'
+#' The original href remains in the database. The proxy endpoint resolves it
+#' server-side, so clients do not need to understand storage-provider tokens.
+#' @noRd
+.proxy_thumbnail_assets <- function(item, base_url) {
+  if (is.null(item$assets) || length(item$assets) == 0) return(item)
+
+  cid <- utils::URLencode(as.character(item$collection), reserved = FALSE)
+  iid <- utils::URLencode(as.character(item$id), reserved = FALSE)
+  keys <- names(item$assets)
+  if (is.null(keys)) keys <- as.character(seq_along(item$assets))
+  item$assets <- lapply(seq_along(item$assets), function(i) {
+    key <- keys[[i]]
+    asset <- item$assets[[i]]
+    roles <- asset$roles %||% character(0)
+    is_thumbnail <- identical(key, "thumbnail") || identical(key, "thumb") ||
+      "thumbnail" %in% roles
+    if (is_thumbnail && !is.null(asset$href)) {
+      encoded_key <- utils::URLencode(key, reserved = FALSE)
+      asset$href <- paste0(
+        base_url, "/thumbnails/", cid, "/", iid, "/", encoded_key
+      )
+    }
+    asset
+  })
+  names(item$assets) <- keys
+  item
+}
+
+#' Fetch a thumbnail after signing its original storage href.
+#' @noRd
+.serve_thumbnail <- function(con, res, collection_id, item_id, asset_key,
+                             sign_fn) {
+  item <- .db_get_item(con, collection_id, item_id)
+  asset <- if (!is.null(item) && !is.null(item$assets)) {
+    item$assets[[asset_key]]
+  } else {
+    NULL
+  }
+  roles <- if (!is.null(asset)) asset$roles %||% character(0) else character(0)
+  is_thumbnail <- identical(asset_key, "thumbnail") ||
+    identical(asset_key, "thumb") || "thumbnail" %in% roles
+
+  if (is.null(asset) || !is_thumbnail || is.null(asset$href)) {
+    return(.not_found(res, "Thumbnail not found"))
+  }
+
+  href <- tryCatch(
+    if (is.null(sign_fn)) asset$href else sign_fn(asset$href),
+    error = function(e) NULL
+  )
+  if (is.null(href) || !is.character(href) || length(href) != 1L ||
+      !nzchar(href)) {
+    res$status <- 502L
+    return(.error_body(502L, "Unable to retrieve thumbnail"))
+  }
+
+  fetched <- tryCatch(
+    curl::curl_fetch_memory(
+      href,
+      handle = curl::new_handle(
+        followlocation = TRUE,
+        connecttimeout = 10,
+        timeout = 30
+      )
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(fetched) || fetched$status_code < 200L ||
+      fetched$status_code >= 300L) {
+    res$status <- if (!is.null(fetched) && fetched$status_code == 404L) {
+      404L
+    } else {
+      502L
+    }
+    return(.error_body(res$status, "Unable to retrieve thumbnail"))
+  }
+
+  content_type <- fetched$content_type %||% asset$type %||%
+    "application/octet-stream"
+  content_type <- sub(";.*$", "", content_type)
+  res$setHeader("Content-Type", content_type)
+  res$setHeader("Cache-Control", "private, no-store")
+  fetched$content
+}
+
 #' STAC API conformance class URIs.
 #'
 #' Returns the list of OGC and STAC conformance class URIs declared by this

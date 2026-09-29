@@ -10,7 +10,8 @@ stac_api_router(
   title = "STAC API",
   description = "A minimal STAC API served by stacserver",
   sign_fn = NULL,
-  cors_origins = NULL
+  cors_origins = NULL,
+  proxy_thumbnails = FALSE
 )
 }
 \arguments{
@@ -35,6 +36,11 @@ credentials.}
 JavaScript, as a character vector of \verb{scheme://host[:port]} values with no
 path, e.g. \code{"https://browser.example.com"}. \code{"*"} allows every origin.
 Default \code{NULL} sends no CORS headers at all. See \emph{Cross-origin requests}.}
+
+\item{proxy_thumbnails}{If \code{TRUE}, assets named \code{thumbnail} or \code{thumb}, or
+carrying the STAC \code{thumbnail} role, use an API-local URL and are fetched
+through the \verb{/thumbnails/...} endpoint. This is useful for clients that do
+not support signed storage URLs. Default \code{FALSE}.}
 }
 \value{
 A \code{plumber} router object.
@@ -53,6 +59,7 @@ Returns a \code{plumber} router pre-wired with the following endpoints:
    GET \tab \verb{/collections/\{collectionId\}/items/\{itemId\}} \tab Single item \cr
    GET \tab \verb{/search} \tab Search items (GET form) \cr
    POST \tab \verb{/search} \tab Search items (POST / JSON body) \cr
+   GET \tab \verb{/thumbnails/\{collectionId\}/\{itemId\}/\{assetKey\}} \tab Serve a thumbnail \cr
 }
 
 
