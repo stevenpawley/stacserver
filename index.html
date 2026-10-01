@@ -81,30 +81,34 @@
 <tbody>
 <tr>
 <td><code>/</code></td>
-<td>Landing page with conformance links</td>
+<td>Swagger UI</td>
 </tr>
 <tr>
-<td><code>/conformance</code></td>
+<td><code>/catalog</code></td>
+<td>STAC landing page with conformance links</td>
+</tr>
+<tr>
+<td><code>/catalog/conformance</code></td>
 <td>Conformance class declarations</td>
 </tr>
 <tr>
-<td><code>/collections</code></td>
+<td><code>/catalog/collections</code></td>
 <td>List all collections</td>
 </tr>
 <tr>
-<td><code>/collections/{id}</code></td>
+<td><code>/catalog/collections/{id}</code></td>
 <td>A single collection</td>
 </tr>
 <tr>
-<td><code>/collections/{id}/items</code></td>
+<td><code>/catalog/collections/{id}/items</code></td>
 <td>Items in a collection (<code>bbox</code>, <code>datetime</code>, <code>limit</code>)</td>
 </tr>
 <tr>
-<td><code>/collections/{id}/items/{itemId}</code></td>
+<td><code>/catalog/collections/{id}/items/{itemId}</code></td>
 <td>A single item</td>
 </tr>
 <tr>
-<td><code>/search</code></td>
+<td><code>/catalog/search</code></td>
 <td>Item search, <code>GET</code> and <code>POST</code>
 </td>
 </tr>
@@ -201,6 +205,11 @@
 <span><span class="fu">plumber</span><span class="fu">::</span><span class="fu"><a href="https://www.rplumber.io/reference/pr_run.html" class="external-link">pr_run</a></span><span class="op">(</span><span class="va">router</span>, port <span class="op">=</span> <span class="fl">8000</span><span class="op">)</span></span></code></pre></div>
 <p>The router exposes these endpoints:</p>
 <table class="table">
+<colgroup>
+<col width="29%">
+<col width="22%">
+<col width="48%">
+</colgroup>
 <thead><tr>
 <th>Method</th>
 <th>Path</th>
@@ -209,49 +218,49 @@
 <tbody>
 <tr>
 <td>GET</td>
-<td><code>/</code></td>
-<td>Landing page</td>
+<td><code>/catalog</code></td>
+<td>STAC landing page</td>
 </tr>
 <tr>
 <td>GET</td>
-<td><code>/conformance</code></td>
+<td><code>/catalog/conformance</code></td>
 <td>Conformance classes</td>
 </tr>
 <tr>
 <td>GET</td>
-<td><code>/collections</code></td>
+<td><code>/catalog/collections</code></td>
 <td>All collections</td>
 </tr>
 <tr>
 <td>GET</td>
-<td><code>/collections/{collectionId}</code></td>
+<td><code>/catalog/collections/{collectionId}</code></td>
 <td>Single collection</td>
 </tr>
 <tr>
 <td>GET</td>
-<td><code>/collections/{collectionId}/items</code></td>
+<td><code>/catalog/collections/{collectionId}/items</code></td>
 <td>Paged items</td>
 </tr>
 <tr>
 <td>GET</td>
-<td><code>/collections/{collectionId}/items/{itemId}</code></td>
+<td><code>/catalog/collections/{collectionId}/items/{itemId}</code></td>
 <td>Single item</td>
 </tr>
 <tr>
 <td>GET</td>
-<td><code>/search</code></td>
+<td><code>/catalog/search</code></td>
 <td>Cross-collection search</td>
 </tr>
 <tr>
 <td>POST</td>
-<td><code>/search</code></td>
+<td><code>/catalog/search</code></td>
 <td>Search with JSON body</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Search parameters:</strong> <code>bbox</code>, <code>datetime</code>, <code>collections</code>, <code>ids</code>, <code>limit</code>, <code>offset</code>.</p>
 <p><code>bbox</code> takes the four-element <code>west,south,east,north</code> form or the six-element <code>west,south,min_elevation,east,north,max_elevation</code> form, and a box whose west edge is east of its east edge is treated as crossing the antimeridian.</p>
-<p>The POST <code>/search</code> endpoint additionally accepts a <code>query</code> object implementing the <a href="https://github.com/stac-api-extensions/query" class="external-link">STAC API Query extension</a>, which filters on any item property including extension fields. A bare value means equality; an object selects operators (<code>eq</code>, <code>neq</code>, <code>lt</code>, <code>lte</code>, <code>gt</code>, <code>gte</code>, <code>startsWith</code>, <code>endsWith</code>, <code>contains</code>, <code>in</code>):</p>
+<p>The POST <code>/catalog/search</code> endpoint additionally accepts a <code>query</code> object implementing the <a href="https://github.com/stac-api-extensions/query" class="external-link">STAC API Query extension</a>, which filters on any item property including extension fields. A bare value means equality; an object selects operators (<code>eq</code>, <code>neq</code>, <code>lt</code>, <code>lte</code>, <code>gt</code>, <code>gte</code>, <code>startsWith</code>, <code>endsWith</code>, <code>contains</code>, <code>in</code>):</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="dt">"bbox"</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">-106</span><span class="ot">,</span> <span class="dv">39</span><span class="ot">,</span> <span class="dv">-104</span><span class="ot">,</span> <span class="dv">41</span><span class="ot">]</span><span class="fu">,</span></span>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="dt">"datetime"</span><span class="fu">:</span> <span class="st">"2023-01-01T00:00:00Z/2023-12-31T23:59:59Z"</span><span class="fu">,</span></span>
@@ -269,7 +278,7 @@
 <p><strong>The router performs no authentication of its own.</strong> Every request it receives is served, so access has to be enforced in front of it. Running it on an open port publishes the whole catalog to anyone who can reach that port.</p>
 <p>On Posit Connect, set the content’s access to <strong>“All authenticated users”</strong> (or a specific group) under the content’s Access settings. Connect then validates the caller’s API key or session before the request reaches the plumber process. Callers authenticate to Connect itself:</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
-<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>     https://connect.example.com/content/<span class="op">&lt;</span>guid<span class="op">&gt;</span>/collections</span></code></pre></div>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>     https://connect.example.com/content/<span class="op">&lt;</span>guid<span class="op">&gt;</span>/catalog/collections</span></code></pre></div>
 <p>Elsewhere, put the API behind a reverse proxy, API gateway, or similar that authenticates requests before they arrive.</p>
 <div class="section level3">
 <h3 id="cross-origin-requests">Cross-origin requests<a class="anchor" aria-label="anchor" href="#cross-origin-requests"></a>
@@ -312,12 +321,13 @@
 <span>  base_url <span class="op">=</span> <span class="st">"https://connect.example.com/stac"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p><code>base_url</code> has to be set by hand. Connect serves content under a path prefix and the plumber process only sees the path below it, so it cannot work out its own public address. Every link in every response is built from this value, and STAC clients navigate by following those links — get it wrong and paging and item navigation break even though each endpoint answers correctly on its own.</p>
-<p>Use whichever URL clients actually type: the vanity URL if the content has one (set under <strong>Content URL</strong> in the content settings), otherwise <code>https://connect.example.com/content/&lt;guid&gt;/</code>, dropping the trailing slash. After the first deploy, request the landing page and check that the <code>self</code> link matches the URL you used to reach it.</p>
+<p>The STAC API is mounted under <code>/catalog</code>. Set <code>base_url</code> to the deployed content URL without a trailing slash. Swagger UI is at the content root, and the STAC landing page is at <code>&lt;base_url&gt;/catalog</code>.</p>
+<p>Use whichever URL clients actually type: the vanity URL if the content has one (set under <strong>Content URL</strong> in the content settings), otherwise <code>https://connect.example.com/content/&lt;guid&gt;/</code>, dropping the trailing slash. After the first deploy, request <code>&lt;base_url&gt;/catalog</code> and check that the <code>self</code> link matches the URL you used to reach it.</p>
 <p>Then publish and set database credentials as environment variables in the Connect dashboard.</p>
 <p>In the content’s <strong>Access</strong> settings, set access to <strong>“All authenticated Posit Connect users”</strong> (or a specific group). This is what secures the API: Connect validates each caller’s key or session before the request reaches the plumber process. Leaving the content readable by anyone publishes the entire catalog.</p>
 <p>Callers authenticate using their personal Connect API key:</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="ex">curl</span> <span class="at">-H</span> <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> <span class="dt">\</span></span>
-<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>     https://connect.example.com/stac/collections</span></code></pre></div>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>     https://connect.example.com/stac/catalog/collections</span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="dependencies">Dependencies<a class="anchor" aria-label="anchor" href="#dependencies"></a>

@@ -61,7 +61,9 @@
 
 
 <dt id="arg-base-url">base_url<a class="anchor" aria-label="anchor" href="#arg-base-url"></a></dt>
-<dd><p>Base URL of the API (no trailing slash). Used in link hrefs.</p></dd>
+<dd><p>Public URL of the deployed Plumber content (no trailing
+slash). The STAC API is served under <code>/catalog</code>; this URL is used to build
+its public links, e.g. <code>https://connect.example.com/stac</code>.</p></dd>
 
 
 <dt id="arg-title">title<a class="anchor" aria-label="anchor" href="#arg-title"></a></dt>
@@ -97,7 +99,7 @@ Default <code>NULL</code> sends no CORS headers at all. See <em>Cross-origin req
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
 
-<table class="table table"><tr><td>Method</td><td>Path</td><td>Description</td></tr><tr><td>GET</td><td><code>/</code></td><td>Landing page (root catalog)</td></tr><tr><td>GET</td><td><code>/conformance</code></td><td>Conformance classes</td></tr><tr><td>GET</td><td><code>/collections</code></td><td>List all collections</td></tr><tr><td>GET</td><td><code>/collections/{collectionId}</code></td><td>Single collection</td></tr><tr><td>GET</td><td><code>/collections/{collectionId}/items</code></td><td>Items in a collection</td></tr><tr><td>GET</td><td><code>/collections/{collectionId}/items/{itemId}</code></td><td>Single item</td></tr><tr><td>GET</td><td><code>/search</code></td><td>Search items (GET form)</td></tr><tr><td>POST</td><td><code>/search</code></td><td>Search items (POST / JSON body)</td></tr></table><p><strong>Search parameters</strong> (GET query string or POST JSON body):</p><ul><li><p><code>bbox</code> - comma-separated <code>west,south,east,north</code> (GET) or array (POST);
+<table class="table table"><tr><td>Method</td><td>Path</td><td>Description</td></tr><tr><td>GET</td><td><code>/catalog</code></td><td>Landing page (root catalog)</td></tr><tr><td>GET</td><td><code>/catalog/conformance</code></td><td>Conformance classes</td></tr><tr><td>GET</td><td><code>/catalog/collections</code></td><td>List all collections</td></tr><tr><td>GET</td><td><code>/catalog/collections/{collectionId}</code></td><td>Single collection</td></tr><tr><td>GET</td><td><code>/catalog/collections/{collectionId}/items</code></td><td>Items in a collection</td></tr><tr><td>GET</td><td><code>/catalog/collections/{collectionId}/items/{itemId}</code></td><td>Single item</td></tr><tr><td>GET</td><td><code>/catalog/search</code></td><td>Search items (GET form)</td></tr><tr><td>POST</td><td><code>/catalog/search</code></td><td>Search items (POST / JSON body)</td></tr></table><p><strong>Search parameters</strong> (GET query string or POST JSON body):</p><ul><li><p><code>bbox</code> - comma-separated <code>west,south,east,north</code> (GET) or array (POST);
 the six-element form <code>west,south,min_elevation,east,north,max_elevation</code>
 is also accepted, and a box whose west edge exceeds its east edge is
 treated as crossing the antimeridian</p></li>
@@ -131,7 +133,7 @@ named group. Connect then validates the caller's API key or session before
 the request reaches this process, and callers authenticate to Connect
 itself:</p>
 <p></p><div class="sourceCode"><pre><code><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>curl <span class="sc">-</span>H <span class="st">"Authorization: Key &lt;connect-api-key&gt;"</span> \</span>
-<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>     https<span class="sc">:</span><span class="er">//</span>connect.example.com<span class="sc">/</span>content<span class="sc">/</span><span class="er">&lt;</span>guid<span class="sc">&gt;</span><span class="er">/</span>collections</span></code></pre><p></p></div>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>     https<span class="sc">:</span><span class="er">//</span>connect.example.com<span class="sc">/</span>content<span class="sc">/</span><span class="er">&lt;</span>guid<span class="sc">&gt;</span><span class="er">/</span>catalog<span class="sc">/</span>collections</span></code></pre><p></p></div>
 <p>Setting that content to "Anyone - no login required", or running the router
 without an authenticating proxy in front of it, publishes the whole catalog
 to anyone who can reach the port.</p>

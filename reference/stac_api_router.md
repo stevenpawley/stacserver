@@ -25,7 +25,9 @@ stac_api_router(
 
 - base_url:
 
-  Base URL of the API (no trailing slash). Used in link hrefs.
+  Public URL of the deployed Plumber content (no trailing slash). The
+  STAC API is served under `/catalog`; this URL is used to build its
+  public links, e.g. `https://connect.example.com/stac`.
 
 - title:
 
@@ -63,14 +65,14 @@ A `plumber` router object.
 |  |  |  |
 |----|----|----|
 | Method | Path | Description |
-| GET | `/` | Landing page (root catalog) |
-| GET | `/conformance` | Conformance classes |
-| GET | `/collections` | List all collections |
-| GET | `/collections/{collectionId}` | Single collection |
-| GET | `/collections/{collectionId}/items` | Items in a collection |
-| GET | `/collections/{collectionId}/items/{itemId}` | Single item |
-| GET | `/search` | Search items (GET form) |
-| POST | `/search` | Search items (POST / JSON body) |
+| GET | `/catalog` | Landing page (root catalog) |
+| GET | `/catalog/conformance` | Conformance classes |
+| GET | `/catalog/collections` | List all collections |
+| GET | `/catalog/collections/{collectionId}` | Single collection |
+| GET | `/catalog/collections/{collectionId}/items` | Items in a collection |
+| GET | `/catalog/collections/{collectionId}/items/{itemId}` | Single item |
+| GET | `/catalog/search` | Search items (GET form) |
+| POST | `/catalog/search` | Search items (POST / JSON body) |
 
 **Search parameters** (GET query string or POST JSON body):
 
@@ -121,7 +123,7 @@ before the request reaches this process, and callers authenticate to
 Connect itself:
 
     curl -H "Authorization: Key <connect-api-key>" \
-         https://connect.example.com/content/<guid>/collections
+         https://connect.example.com/content/<guid>/catalog/collections
 
 Setting that content to "Anyone - no login required", or running the
 router without an authenticating proxy in front of it, publishes the
