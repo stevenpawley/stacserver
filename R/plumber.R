@@ -8,14 +8,14 @@
 #'
 #' | Method | Path | Description |
 #' |--------|------|-------------|
-#' | GET | `/` | Landing page (root catalog) |
-#' | GET | `/conformance` | Conformance classes |
-#' | GET | `/collections` | List all collections |
-#' | GET | `/collections/{collectionId}` | Single collection |
-#' | GET | `/collections/{collectionId}/items` | Items in a collection |
-#' | GET | `/collections/{collectionId}/items/{itemId}` | Single item |
-#' | GET | `/search` | Search items (GET form) |
-#' | POST | `/search` | Search items (POST / JSON body) |
+#' | GET | `/catalog` | Landing page (root catalog) |
+#' | GET | `/catalog/conformance` | Conformance classes |
+#' | GET | `/catalog/collections` | List all collections |
+#' | GET | `/catalog/collections/{collectionId}` | Single collection |
+#' | GET | `/catalog/collections/{collectionId}/items` | Items in a collection |
+#' | GET | `/catalog/collections/{collectionId}/items/{itemId}` | Single item |
+#' | GET | `/catalog/search` | Search items (GET form) |
+#' | POST | `/catalog/search` | Search items (POST / JSON body) |
 #'
 #' **Search parameters** (GET query string or POST JSON body):
 #' * `bbox` - comma-separated `west,south,east,north` (GET) or array (POST);
@@ -46,21 +46,14 @@
 #' # Access control
 #'
 #' The router performs no authentication of its own: every request it receives
-#' is served. Access must be enforced in front of it.
-#'
-#' On Posit Connect, set the content's access to "All authenticated users" or a
-#' named group. Connect then validates the caller's API key or session before
-#' the request reaches this process, and callers authenticate to Connect
-#' itself:
+#' is served. Access must be enforced in front of it. If deploying on Posit
+#' Connect, access is controlled by the caller's API key before the request
+#' reaches this process, and callers authenticate to Connect itself:
 #'
 #' ```
 #' curl -H "Authorization: Key <connect-api-key>" \
-#'      https://connect.example.com/content/<guid>/collections
+#'      https://connect.example.com/content/<guid>/catalog/collections
 #' ```
-#'
-#' Setting that content to "Anyone - no login required", or running the router
-#' without an authenticating proxy in front of it, publishes the whole catalog
-#' to anyone who can reach the port.
 #'
 #' # Cross-origin requests
 #'
@@ -69,30 +62,16 @@
 #' responses. It is not access control: the request still reaches the server
 #' and is served either way, and non-browser clients — `rstac`, GDAL, QGIS,
 #' Python — ignore the header entirely. It only stops a page the user happens
-#' to be visiting from reading the catalog on their behalf.
-#'
-#' The default of `NULL` sends no CORS headers, which is right for an API
-#' consumed by those clients or by a browser app served from the same origin.
-#' Name an origin only for a browser app hosted elsewhere:
+#' to be visiting from reading the catalog on their behalf. Name an origin only
+#' for a browser app hosted elsewhere by:
 #'
 #' ```r
-#' stac_api_router(con, cors_origins = "https://browser.example.com")
+#' stac_api_router(con, cors_origins = "https://example.com")
 #' ```
-#'
-#' An origin is a scheme, host and optional port with no path, because that is
-#' all a browser sends: a page at `https://example.com/browser` sends the
-#' origin `https://example.com`.
-#'
-#' This matters more when `sign_fn` is set, because responses then carry live
-#' signed asset URLs. `"*"` lets any site on the internet read those, which is
-#' only appropriate for a genuinely public catalog. Note also that a
-#' cross-origin browser app cannot authenticate to Posit Connect: preflight
-#' requests carry no credentials, so Connect rejects them before this router
-#' sees them. Serving the browser app from the same origin as the API avoids
-#' the problem entirely.
-#'
 #' @param con A DBI connection, or a `pool::dbPool()` object.
-#' @param base_url Base URL of the API (no trailing slash). Used in link hrefs.
+#' @param base_url Public URL of the deployed Plumber content (no trailing
+#'   slash). The STAC API is served under `/catalog`; this URL is used to build
+#'   its public links, e.g. `https://connect.example.com/stac`.
 #' @param title Human-readable API title.
 #' @param description API description.
 #' @param sign_fn A function `function(href)` that accepts an unsigned asset
@@ -118,36 +97,32 @@ stac_api_router <- function(
   cors_origins = NULL
 ) {
   cors_origins <- .check_cors_origins(cors_origins)
+  content_url <- sub("/+$", "", base_url)
+  api_url <- paste0(content_url, "/catalog")
 
   # Custom serializer (how results are returned back to the client)
   # JSON is default but for STAC API compliance we are altering the
   # defaults to unwrap single element R vectors and provide explicit
-  # nulls. digits = NA keeps full numeric precision: jsonlite's default of 4
-  # decimal places would round coordinates on the way out, undoing on the
-  # response what .stac_to_json() preserves on the way in.
+  # nulls.
   pr <- plumber::pr() |>
     plumber::pr_set_serializer(.stac_serializer())
 
   if (!is.null(sign_fn)) {
-    # Set this before routing, including error responses and signing failures.
+    # Set this before routing, prevents caching
     pr <- plumber::pr_filter(pr, "signed_response_cache", function(req, res) {
       res$setHeader("Cache-Control", "private, no-store")
       plumber::forward()
     })
   }
 
-  # CORS - answers the pre-flight OPTIONS request directly. Only needed by a
-  # browser on another origin; a page served from the same origin as the API
-  # never involves CORS, and R and Python clients ignore it. The filter is
-  # registered only when an origin is configured, so the default API sends no
-  # CORS headers and does not intercept OPTIONS.
+  # CORS
   if (!is.null(cors_origins)) {
     pr <- plumber::pr_filter(pr, "cors", .cors_filter(cors_origins))
   }
 
   # Inject standard STAC navigation links and optionally sign asset hrefs
   prepare_item <- function(item) {
-    item <- .inject_item_links(item, base_url)
+    item <- .inject_item_links(item, api_url)
     if (!is.null(sign_fn)) {
       item <- .sign_item_assets(item, sign_fn)
     }
@@ -159,10 +134,10 @@ stac_api_router <- function(
   # published statically points at files rather than at this API.
   collection_links <- function(cid) {
     list(
-      .link("self", paste0(base_url, "/collections/", cid), "application/json"),
-      .link("root", base_url, "application/json"),
-      .link("parent", base_url, "application/json"),
-      .link("items", paste0(base_url, "/collections/", cid, "/items"), "application/geo+json")
+      .link("self", paste0(api_url, "/collections/", cid), "application/json"),
+      .link("root", api_url, "application/json"),
+      .link("parent", api_url, "application/json"),
+      .link("items", paste0(api_url, "/collections/", cid, "/items"), "application/geo+json")
     )
   }
   collection_rels <- c("self", "root", "parent", "items")
@@ -175,9 +150,10 @@ stac_api_router <- function(
   #   OpenAPI description plumber generates
   # - search (x2): required by the STAC API Item Search spec, one per supported method
 
-  # Landing page (root catalog)
-  # GET /
-  pr <- plumber::pr_get(pr, "/", function(req, res) {
+  # Landing page (catalog). Leave / unclaimed so Plumber serves Swagger UI
+  # there when this router is deployed to Posit Connect.
+  # GET /catalog
+  pr <- plumber::pr_get(pr, "/catalog", function(req, res) {
     list(
       type = "Catalog",
       stac_version = "1.0.0",
@@ -185,18 +161,18 @@ stac_api_router <- function(
       title = title,
       description = description,
       conformsTo = .stac_conformance_uris(),
-      links = .landing_links(base_url)
+      links = .landing_links(api_url, docs_url = content_url)
     )
   })
 
-  # GET /conformance
-  pr <- plumber::pr_get(pr, "/conformance", function(req, res) {
+  # GET /catalog/conformance
+  pr <- plumber::pr_get(pr, "/catalog/conformance", function(req, res) {
     list(conformsTo = .stac_conformance_uris())
   })
 
   # List all collections
-  # GET /collections
-  pr <- plumber::pr_get(pr, "/collections", function(req, res) {
+  # GET /catalog/collections
+  pr <- plumber::pr_get(pr, "/catalog/collections", function(req, res) {
     collections <- .db_get_all_collections(con)
     collections <- lapply(collections, function(col) {
       col$links <- .merge_links(
@@ -210,8 +186,8 @@ stac_api_router <- function(
     list(
       collections = collections,
       links = list(
-        .link("self", paste0(base_url, "/collections"), "application/json"),
-        .link("root", base_url, "application/json")
+        .link("self", paste0(api_url, "/collections"), "application/json"),
+        .link("root", api_url, "application/json")
       )
     )
   })
@@ -220,7 +196,7 @@ stac_api_router <- function(
   # GET /collections/{collectionId}
   pr <- plumber::pr_get(
     pr,
-    "/collections/<collectionId>",
+    "/catalog/collections/<collectionId>",
     function(req, res, collectionId) {
       col <- .db_get_collection(con, collectionId)
       if (is.null(col)) {
@@ -240,7 +216,7 @@ stac_api_router <- function(
   # GET /collections/{collectionId}/items
   pr <- plumber::pr_get(
     pr,
-    "/collections/<collectionId>/items",
+    "/catalog/collections/<collectionId>/items",
     function(
       req,
       res,
@@ -279,7 +255,7 @@ stac_api_router <- function(
           matched = result$matched,
           returned = length(result$items),
           links = .pagination_links(
-            base_url = paste0(base_url, "/collections/", collectionId, "/items"),
+            base_url = paste0(api_url, "/collections/", collectionId, "/items"),
             offset = offset,
             limit = limit,
             matched = result$matched,
@@ -294,7 +270,7 @@ stac_api_router <- function(
   # GET /collections/{collectionId}/items/{itemId}
   pr <- plumber::pr_get(
     pr,
-    "/collections/<collectionId>/items/<itemId>",
+    "/catalog/collections/<collectionId>/items/<itemId>",
     function(req, res, collectionId, itemId) {
       item <- .db_get_item(con, collectionId, itemId)
       if (is.null(item)) {
@@ -315,7 +291,7 @@ stac_api_router <- function(
   # GET /search
   pr <- plumber::pr_get(
     pr,
-    "/search",
+    "/catalog/search",
     function(
       req,
       res,
@@ -355,7 +331,7 @@ stac_api_router <- function(
           matched = result$matched,
           returned = length(result$items),
           links = .pagination_links(
-            base_url = paste0(base_url, "/search"),
+            base_url = paste0(api_url, "/search"),
             offset = offset,
             limit = limit,
             matched = result$matched,
@@ -378,7 +354,7 @@ stac_api_router <- function(
   # POST /search
   pr <- plumber::pr_post(
     pr,
-    "/search",
+    "/catalog/search",
     function(req, res) {
       .with_bad_request(res, {
         body <- req$body %||% list()
@@ -421,7 +397,7 @@ stac_api_router <- function(
           matched = result$matched,
           returned = length(result$items),
           links = .pagination_links(
-            base_url = paste0(base_url, "/search"),
+            base_url = paste0(api_url, "/search"),
             offset = offset,
             limit = limit,
             matched = result$matched

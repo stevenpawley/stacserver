@@ -18,20 +18,20 @@ test_that("signed item responses prohibit caching across item and search routes"
 
   signed <- stac_api_router(NULL, sign_fn = function(href) paste0(href, "?sig=test"))
   plain <- stac_api_router(NULL)
-  for (path in c("/collections/demo/items/one", "/collections/demo/items", "/search")) {
+  for (path in c("/catalog/collections/demo/items/one", "/catalog/collections/demo/items", "/catalog/search")) {
     response <- request(signed, path)
     expect_identical(response$status, 200L)
     expect_identical(response$headers[["Cache-Control"]], "private, no-store")
     expect_match(as.character(response$body), "sig=test", fixed = TRUE)
     expect_null(request(plain, path)$headers[["Cache-Control"]])
   }
-  response <- request(signed, "/search", "POST")
+  response <- request(signed, "/catalog/search", "POST")
   expect_identical(response$status, 200L)
   expect_identical(response$headers[["Cache-Control"]], "private, no-store")
   expect_match(as.character(response$body), "sig=test", fixed = TRUE)
 
   failing <- stac_api_router(NULL, sign_fn = function(href) stop("failed"))
-  expect_warning(response <- request(failing, "/collections/demo/items/one"),
+  expect_warning(response <- request(failing, "/catalog/collections/demo/items/one"),
                  "Asset signing failed")
   expect_identical(response$status, 200L)
   expect_identical(response$headers[["Cache-Control"]], "private, no-store")

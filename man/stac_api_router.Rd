@@ -16,7 +16,9 @@ stac_api_router(
 \arguments{
 \item{con}{A DBI connection, or a \code{pool::dbPool()} object.}
 
-\item{base_url}{Base URL of the API (no trailing slash). Used in link hrefs.}
+\item{base_url}{Public URL of the deployed Plumber content (no trailing
+slash). The STAC API is served under \code{/catalog}; this URL is used to build
+its public links, e.g. \code{https://connect.example.com/stac}.}
 
 \item{title}{Human-readable API title.}
 
@@ -45,14 +47,14 @@ Returns a \code{plumber} router pre-wired with the following endpoints:
 \details{
 \tabular{lll}{
    Method \tab Path \tab Description \cr
-   GET \tab \code{/} \tab Landing page (root catalog) \cr
-   GET \tab \verb{/conformance} \tab Conformance classes \cr
-   GET \tab \verb{/collections} \tab List all collections \cr
-   GET \tab \verb{/collections/\{collectionId\}} \tab Single collection \cr
-   GET \tab \verb{/collections/\{collectionId\}/items} \tab Items in a collection \cr
-   GET \tab \verb{/collections/\{collectionId\}/items/\{itemId\}} \tab Single item \cr
-   GET \tab \verb{/search} \tab Search items (GET form) \cr
-   POST \tab \verb{/search} \tab Search items (POST / JSON body) \cr
+   GET \tab \code{/catalog} \tab Landing page (root catalog) \cr
+   GET \tab \verb{/catalog/conformance} \tab Conformance classes \cr
+   GET \tab \verb{/catalog/collections} \tab List all collections \cr
+   GET \tab \verb{/catalog/collections/\{collectionId\}} \tab Single collection \cr
+   GET \tab \verb{/catalog/collections/\{collectionId\}/items} \tab Items in a collection \cr
+   GET \tab \verb{/catalog/collections/\{collectionId\}/items/\{itemId\}} \tab Single item \cr
+   GET \tab \verb{/catalog/search} \tab Search items (GET form) \cr
+   POST \tab \verb{/catalog/search} \tab Search items (POST / JSON body) \cr
 }
 
 
@@ -94,7 +96,7 @@ the request reaches this process, and callers authenticate to Connect
 itself:
 
 \if{html}{\out{<div class="sourceCode">}}\preformatted{curl -H "Authorization: Key <connect-api-key>" \\
-     https://connect.example.com/content/<guid>/collections
+     https://connect.example.com/content/<guid>/catalog/collections
 }\if{html}{\out{</div>}}
 
 Setting that content to "Anyone - no login required", or running the router
@@ -129,4 +131,3 @@ requests carry no credentials, so Connect rejects them before this router
 sees them. Serving the browser app from the same origin as the API avoids
 the problem entirely.
 }
-

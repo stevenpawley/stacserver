@@ -437,7 +437,7 @@
 #' @param base_url Base URL of the API (no trailing slash).
 #' @return A list of STAC link objects.
 #' @noRd
-.landing_links <- function(base_url) {
+.landing_links <- function(base_url, docs_url = sub("/catalog$", "", base_url)) {
   list(
     .link("self", base_url, "application/json"),
     .link("root", base_url, "application/json"),
@@ -449,10 +449,10 @@
     .link("data", paste0(base_url, "/collections"), "application/json"),
     .link(
       "service-desc",
-      paste0(base_url, "/openapi.json"),
+      paste0(docs_url, "/openapi.json"),
       "application/vnd.oai.openapi+json;version=3.0"
     ),
-    .link("service-doc", paste0(base_url, "/__docs__/"), "text/html"),
+    .link("service-doc", paste0(docs_url, "/"), "text/html"),
     .link(
       "search",
       paste0(base_url, "/search"),

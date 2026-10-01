@@ -29,13 +29,14 @@ remotes::install_github("stevenpawley/stacserver")
 
 | Endpoint | Purpose |
 |----------|---------|
-| `/` | Landing page with conformance links |
-| `/conformance` | Conformance class declarations |
-| `/collections` | List all collections |
-| `/collections/{id}` | A single collection |
-| `/collections/{id}/items` | Items in a collection (`bbox`, `datetime`, `limit`) |
-| `/collections/{id}/items/{itemId}` | A single item |
-| `/search` | Item search, `GET` and `POST` |
+| `/` | Swagger UI |
+| `/catalog` | STAC landing page with conformance links |
+| `/catalog/conformance` | Conformance class declarations |
+| `/catalog/collections` | List all collections |
+| `/catalog/collections/{id}` | A single collection |
+| `/catalog/collections/{id}/items` | Items in a collection (`bbox`, `datetime`, `limit`) |
+| `/catalog/collections/{id}/items/{itemId}` | A single item |
+| `/catalog/search` | Item search, `GET` and `POST` |
 
 ## Asset signing
 
@@ -161,14 +162,14 @@ The router exposes these endpoints:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | Landing page |
-| GET | `/conformance` | Conformance classes |
-| GET | `/collections` | All collections |
-| GET | `/collections/{collectionId}` | Single collection |
-| GET | `/collections/{collectionId}/items` | Paged items |
-| GET | `/collections/{collectionId}/items/{itemId}` | Single item |
-| GET | `/search` | Cross-collection search |
-| POST | `/search` | Search with JSON body |
+| GET | `/catalog` | STAC landing page |
+| GET | `/catalog/conformance` | Conformance classes |
+| GET | `/catalog/collections` | All collections |
+| GET | `/catalog/collections/{collectionId}` | Single collection |
+| GET | `/catalog/collections/{collectionId}/items` | Paged items |
+| GET | `/catalog/collections/{collectionId}/items/{itemId}` | Single item |
+| GET | `/catalog/search` | Cross-collection search |
+| POST | `/catalog/search` | Search with JSON body |
 
 **Search parameters:** `bbox`, `datetime`, `collections`, `ids`, `limit`, `offset`.
 
@@ -176,7 +177,7 @@ The router exposes these endpoints:
 `west,south,min_elevation,east,north,max_elevation` form, and a box whose west
 edge is east of its east edge is treated as crossing the antimeridian.
 
-The POST `/search` endpoint additionally accepts a `query` object implementing
+The POST `/catalog/search` endpoint additionally accepts a `query` object implementing
 the [STAC API Query extension](https://github.com/stac-api-extensions/query),
 which filters on any item property including extension fields. A bare value
 means equality; an object selects operators (`eq`, `neq`, `lt`, `lte`, `gt`,
@@ -208,7 +209,7 @@ Callers authenticate to Connect itself:
 
 ```bash
 curl -H "Authorization: Key <connect-api-key>" \
-     https://connect.example.com/content/<guid>/collections
+     https://connect.example.com/content/<guid>/catalog/collections
 ```
 
 Elsewhere, put the API behind a reverse proxy, API gateway, or similar that
@@ -276,11 +277,15 @@ own public address. Every link in every response is built from this value, and
 STAC clients navigate by following those links — get it wrong and paging and
 item navigation break even though each endpoint answers correctly on its own.
 
+The STAC API is mounted under `/catalog`. Set `base_url` to the deployed
+content URL without a trailing slash. Swagger UI is at the content root, and
+the STAC landing page is at `<base_url>/catalog`.
+
 Use whichever URL clients actually type: the vanity URL if the content has one
 (set under **Content URL** in the content settings), otherwise
 `https://connect.example.com/content/<guid>/`, dropping the trailing slash.
-After the first deploy, request the landing page and check that the `self` link
-matches the URL you used to reach it.
+After the first deploy, request `<base_url>/catalog` and check that the `self`
+link matches the URL you used to reach it.
 
 Then publish and set database credentials as environment variables in the
 Connect dashboard.
@@ -294,7 +299,7 @@ Callers authenticate using their personal Connect API key:
 
 ```bash
 curl -H "Authorization: Key <connect-api-key>" \
-     https://connect.example.com/stac/collections
+     https://connect.example.com/stac/catalog/collections
 ```
 
 ## Dependencies
