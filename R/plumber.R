@@ -107,18 +107,10 @@ stac_api_router <- function(
   pr <- plumber::pr() |>
     plumber::pr_set_serializer(.stac_serializer())
 
-  # Add client setup guidance to the generated OpenAPI spec shown in Swagger.
-  # Keep Plumber's generated paths and metadata, changing only the description.
+  # Use the caller-provided title and description in Swagger's generated spec.
   pr <- plumber::pr_set_api_spec(pr, function(spec) {
-    spec$info$description <- paste(
-      description,
-      paste0(
-        "Configure STAC clients with the catalog URL ", api_url,
-        ". The content root is the Swagger UI; clients such as QGIS should ",
-        "use the catalog URL, which advertises the other API endpoints."
-      ),
-      sep = "\n\n"
-    )
+    spec$info$title <- title
+    spec$info$description <- description
     spec
   })
 
