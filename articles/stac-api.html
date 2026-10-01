@@ -251,6 +251,11 @@ with all STAC endpoints.</p>
 <span></span>
 <span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/stac_api_router.html">stac_api_router</a></span><span class="op">(</span></span>
 <span>  <span class="va">con</span>,</span>
+<span>  title <span class="op">=</span> <span class="st">"Example STAC API from stacserver"</span>,</span>
+<span>  description <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
+<span>    <span class="st">"A minimal STAC API served by stacserver."</span>,</span>
+<span>    <span class="st">"Configure STAC clients to the URL at http://127.0.0.1:3485/catalog/"</span></span>
+<span>  <span class="op">)</span>,</span>
 <span>  base_url <span class="op">=</span> <span class="st">"http://127.0.0.1:3485"</span></span>
 <span><span class="op">)</span></span>
 <span></span>

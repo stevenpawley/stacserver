@@ -208,6 +208,11 @@ library(plumber)
 
 pr <- stac_api_router(
   con,
+  title = "Example STAC API from stacserver",
+  description = paste(
+    "A minimal STAC API served by stacserver.",
+    "Configure STAC clients to the URL at http://127.0.0.1:3485/catalog/"
+  ),
   base_url = "http://127.0.0.1:3485"
 )
 
